@@ -1,0 +1,1557 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Шумомер</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#01644f">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Шумомер">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    
+    <!-- Service Worker Registration -->
+    <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+          .then(registration => {
+            console.log('PWA: Service Worker зарегистрирован', registration.scope);
+          })
+          .catch(error => {
+            console.log('PWA: Ошибка регистрации Service Worker', error);
+          });
+      });
+    }
+    </script>
+    
+    <style>
+        :root {
+            --accent: #01644f;
+            --accent-dark: #014d3d;
+            --text-main: #1f2a2e;
+            --surface: #ffffff;
+            --surface-muted: #f7f9f9;
+            --shadow: 0 10px 30px rgba(1, 100, 79, 0.12);
+            --radius: 14px;
+            --danger: #e53935;
+        }
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100dvh;
+            height: 100dvh;
+            margin: 0;
+            background-color: var(--surface);
+            color: var(--text-main);
+            overflow: hidden;
+        }
+        #app {
+            text-align: center;
+            padding: 24px;
+            background: var(--surface);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            width: 90%;
+            max-width: 520px;
+            border: 1px solid rgba(1, 100, 79, 0.08);
+            box-sizing: border-box;
+        }
+        /* Принудительный полноэкранный режим при активном fullscreen */
+        .fs #app {
+            width: 100vw;
+            height: 100dvh;
+            max-width: none;
+            max-height: none;
+            border-radius: 0;
+            box-shadow: none;
+            padding: 15px 15px 10px 15px;
+            display: grid;
+            grid-template-columns: 1fr;
+            grid-template-rows: 5.2fr 0.8fr;
+            grid-template-areas:
+                'graph'
+                'bottom';
+            gap: 8px;
+            align-items: stretch;
+            position: relative;
+        }
+        .fs #spectrumWrap { 
+            grid-area: graph; 
+            position: relative; 
+            padding: 0 !important; 
+            border: none !important; 
+            margin: 0 !important;
+            background: transparent !important;
+            border-radius: 0 !important;
+            height: 100% !important;
+            width: 100% !important;
+        }
+        .fs #freqCanvas { height: 100% !important; width: 100% !important; max-height: none !important; min-height: none !important; }
+
+        /* Заголовок скрыт в fullscreen */
+        .fs h1 { display: none; }
+        /* Статус поверх графика, у верхней кромки канваса */
+        .fs #status {
+            grid-area: graph;
+            position: absolute;
+            top: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: clamp(12px, 1.4vw, 18px);
+            margin: 0;
+            color: rgba(72, 98, 103, 0.6);
+            pointer-events: none;
+            background: transparent;
+            padding: 4px 8px;
+            border-radius: 0;
+            box-shadow: none;
+            z-index: 1000;
+        }
+
+        /* Нижняя область - правильная структура */
+        .fs .bottom-area {
+            grid-area: bottom;
+            display: grid;
+            grid-template-columns: 56% 44%;
+            grid-template-rows: 1fr;
+            gap: 40px;
+            align-items: flex-end;
+            padding: 0 20px 10px 20px;
+        }
+        
+        /* Левая колонка - измерения */
+        .fs .measurements-column {
+            grid-column: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: flex-start;
+            gap: 2px;
+            padding-bottom: 0;
+        }
+        
+        /* Метрики ДО/ПОСЛЕ/РАЗНИЦА - крупно и жирно */
+        .fs #avgBefore { 
+            text-align: left; 
+            font-size: 75px;
+            font-weight: 900;
+            margin: 8px 0 0 0;
+            color: var(--danger);
+            line-height: 1.0;
+        }
+        .fs #avgAfter { 
+            text-align: left; 
+            font-size: 75px;
+            font-weight: 900;
+            margin: 8px 0 0 0;
+            color: var(--accent);
+            line-height: 1.0;
+        }
+        .fs #diff {
+            text-align: left; 
+            font-size: 45px;
+            font-weight: 900;
+            margin: 8px 0 0 0;
+            color: #ffffff;
+            background-color: #585858;
+            padding: 10px 15px;
+            border-radius: 8px;
+            line-height: 1.0;
+            white-space: nowrap;
+            display: inline-block;
+        }
+        
+        /* Правая колонка - управление */
+        .fs .controls-panel {
+            grid-column: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            padding: 0;
+            height: 100%;
+            gap: 12px;
+        }
+
+        /* Секундомер - в центре, с анимацией */
+        .fs #duration {
+            font-size: 60px;
+            color: #233538;
+            text-align: center;
+            margin: 0;
+            font-weight: 700;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        
+        .fs #duration.pulse {
+            transform: scale(1.3);
+            opacity: 1;
+        }
+
+        /* Кнопки внизу */
+        .fs .row {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin: 0;
+        }
+        .fs button { 
+            font-size: 22px;
+            padding: 15px 25px; 
+            border-radius: 10px;
+            width: 220px;
+            background-color: #01644f;
+            color: #ffffff;
+            border: none;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        /* Экран запуска вне fullscreen */
+        #launchOverlay {
+            position: fixed;
+            inset: 0;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            background: #ffffff;
+            color: var(--accent);
+            z-index: 100;
+        }
+        #launchOverlay button {
+            font-size: 28px;
+            padding: 14px 28px;
+            border: 2px solid var(--accent);
+            background: #ffffff;
+            color: var(--accent);
+            border-radius: 12px;
+            cursor: pointer;
+        }
+        html:not(.fs) #launchOverlay { display: flex; }
+        html:not(.fs) #app { display: none; }
+        h1 {
+            margin-top: 0;
+            color: var(--accent);
+            letter-spacing: 0.3px;
+            margin-bottom: 8px;
+            font-size: clamp(20px, 3.6vw, 28px);
+        }
+        #status {
+            margin: 20px 0;
+            font-size: 18px;
+            color: #486267;
+        }
+        #avg {
+            font-size: clamp(28px, 6vw, 48px);
+            font-weight: 700;
+            color: var(--accent);
+            margin: 10px 0 4px 0;
+        }
+        #avgBefore, #avgAfter {
+            font-size: clamp(22px, 5.5vw, 40px);
+            font-weight: 800;
+            margin: 6px 0 2px 0;
+        }
+        #avgBefore { color: var(--danger); }
+        #avgAfter { color: var(--accent); }
+        #diff {
+            font-size: clamp(18px, 5vw, 32px);
+            font-weight: 600;
+            color: #ffffff;
+            background-color: #585858;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin: 6px 0 14px 0;
+            display: inline-block;
+        }
+        #duration {
+            font-size: 18px;
+            color: #233538;
+            margin: 6px 0;
+        }
+        /* АЧХ */
+        #spectrumWrap {
+            margin: 12px 0 6px 0;
+            background: var(--surface);
+            border: 1px solid rgba(1, 100, 79, 0.12);
+            border-radius: 10px;
+            padding: 10px;
+            box-shadow: none;
+        }
+        #freqCanvas {
+            width: 100%;
+            height: 28vh;
+            max-height: 260px;
+            min-height: 140px;
+            display: block;
+        }
+        
+        /* Убрать ограничения в fullscreen */
+        .fs #freqCanvas {
+            height: 100% !important;
+            max-height: none !important;
+            min-height: none !important;
+        }
+        
+        #avg.highlight {
+            font-size: 48px;
+            font-weight: bold;
+            margin-top: 10px;
+            color: var(--accent);
+        }
+        button {
+            padding: 18px 36px;
+            font-size: clamp(12px, 3.6vw, 29px);
+            margin: 5px;
+            cursor: pointer;
+            border: none;
+            border-radius: 9px;
+            background-color: var(--accent);
+            color: #ffffff;
+            box-shadow: 0 6px 16px rgba(1, 100, 79, 0.18);
+            transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease;
+        }
+        button:hover {
+            background-color: var(--accent-dark);
+            box-shadow: 0 10px 22px rgba(1, 100, 79, 0.22);
+            transform: translateY(-1px);
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        #toggleBtn.stop {
+            background: linear-gradient(0deg, rgba(1,100,79,0.08), rgba(1,100,79,0.08)), #ffffff;
+            color: var(--accent);
+            border: 1px solid rgba(1, 100, 79, 0.28);
+        }
+        #toggleBtn.stop:hover { background: #f2fbf8; }
+        #clearHistoryBtn { background-color: #2c3e40; }
+        #clearHistoryBtn:hover { background-color: #1f2a2e; }
+        #deviceList {
+            margin: 10px 0;
+            padding: 10px;
+            width: 100%;
+            border-radius: 8px;
+            border: 1px solid rgba(1, 100, 79, 0.25);
+            outline: none;
+            background: var(--surface-muted);
+            color: var(--text-main);
+        }
+        #history {
+            margin-top: 16px;
+            text-align: left;
+        }
+        #history h3 {
+            margin: 8px 0;
+            font-size: 18px;
+            color: var(--accent);
+        }
+        #historyList {
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 0;
+            margin: 0;
+            list-style: none;
+            border: 1px solid rgba(1, 100, 79, 0.12);
+            border-radius: 6px;
+            background: var(--surface);
+        }
+        #historyList li {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(1, 100, 79, 0.08);
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        #historyList li:last-child { border-bottom: none; }
+        .row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+        @media (max-width: 600px) {
+            #avg.highlight { font-size: clamp(24px, 6.5vw, 34px); }
+            #app { padding: 18px 14px; }
+            .row { flex-wrap: nowrap; gap: 8px; }
+            button { flex: 1 1 0; }
+        }
+
+        @media (orientation: landscape) and (max-height: 520px) {
+            html:not(.fs) #freqCanvas { height: 40vh; min-height: 140px; }
+            html:not(.fs) #app { max-width: 680px; }
+            html:not(.fs) .row { gap: 6px; }
+            html:not(.fs) button { padding: 14px 29px; font-size: clamp(11px, 3vw, 24px); }
+        }
+
+
+        /* НОВЫЕ СТИЛИ ДЛЯ ПЛАНШЕТА С РАЗРЕШЕНИЕМ 2560x1600 */
+        @media (min-width: 2000px) and (min-height: 1200px) and (orientation: landscape) {
+            html, body { height: 100dvh; }
+            body { min-height: 100dvh; height: 100dvh; overflow: hidden; }
+            #app {
+                width: 100vw;
+                height: 100dvh;
+                max-width: none;
+                max-height: none;
+                border-radius: 0;
+                box-shadow: none;
+                padding: 15px 15px 10px 15px;
+                display: grid;
+                grid-template-columns: 1fr;
+                grid-template-rows: 5.2fr 0.8fr;
+                grid-template-areas:
+                    'graph'
+                    'bottom';
+                gap: 8px;
+                align-items: stretch;
+                position: relative;
+            }
+            h1 { display: none; }
+            #status {
+                grid-area: graph;
+                position: absolute;
+                top: 8px;
+                left: 50%;
+                transform: translateX(-50%);
+                text-align: center;
+                font-size: clamp(12px, 1.4vw, 18px);
+                background: transparent;
+                color: rgba(72, 98, 103, 0.6);
+                padding: 4px 8px;
+                border-radius: 0;
+                box-shadow: none;
+                z-index: 1000;
+            }
+            .fs #spectrumWrap { 
+                grid-area: graph; 
+                position: relative; 
+                padding: 0 !important; 
+                border: none !important; 
+                margin: 0 !important;
+                background: transparent !important;
+                border-radius: 0 !important;
+                height: 100% !important;
+                width: 100% !important;
+            }
+            .fs #freqCanvas { height: 100% !important; max-height: none !important; min-height: none !important; width: 100% !important; }
+            
+            .bottom-area {
+                grid-area: bottom;
+                display: grid;
+                grid-template-columns: 56% 44%;
+                grid-template-rows: 1fr;
+                gap: 40px;
+                align-items: flex-end;
+                padding: 0 20px 10px 20px;
+            }
+            
+            .measurements-column {
+                grid-column: 1;
+                display: flex;
+                flex-direction: column;
+                justify-content: flex-end;
+                align-items: flex-start;
+                gap: 2px;
+                padding-bottom: 0;
+            }
+            
+            #avgBefore { 
+                text-align: left; 
+                font-size: 75px;
+                font-weight: 900;
+                margin: 8px 0 0 0;
+                color: var(--danger);
+                line-height: 1.0;
+            }
+            #avgAfter { 
+                text-align: left; 
+                font-size: 75px;
+                font-weight: 900;
+                margin: 8px 0 0 0;
+                color: var(--accent);
+                line-height: 1.0;
+            }
+            #diff {
+                text-align: left; 
+                font-size: 45px;
+                font-weight: 900;
+                margin: 8px 0 0 0;
+                color: #ffffff;
+                background-color: #585858;
+                padding: 10px 15px;
+                border-radius: 8px;
+                line-height: 1.0;
+                white-space: nowrap;
+                display: inline-block;
+            }
+            
+            .controls-panel {
+                grid-column: 2;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-end;
+                padding: 0;
+                height: 100%;
+                gap: 12px;
+            }
+            
+            #duration {
+                font-size: 60px;
+                color: #233538;
+                text-align: center;
+                margin: 0;
+                font-weight: 700;
+                transition: transform 0.3s ease, opacity 0.3s ease;
+            }
+            
+            #duration.pulse {
+                transform: scale(1.3);
+                opacity: 1;
+            }
+            
+            .row {
+                display: flex;
+                flex-direction: row;
+                justify-content: center;
+                align-items: center;
+                gap: 10px;
+                margin: 0;
+            }
+            
+            button { 
+                font-size: 22px;
+                padding: 15px 25px; 
+                border-radius: 10px;
+                width: 220px;
+                background-color: #01644f;
+                color: #ffffff;
+                border: none;
+                font-weight: bold;
+                text-transform: uppercase;
+            }
+        }
+
+        .note {
+            font-size: 14px;
+            color: #667d81;
+            margin-top: 20px;
+        }
+        
+        /* Анимация пульсации для кнопки Старт */
+        @keyframes pulse-button {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+        }
+        
+        #toggleBtn.pulse-attention {
+            animation: pulse-button 1.5s ease-in-out infinite;
+        }
+        
+        /* Обычные стили для не-fullscreen режима */
+        .bottom-area {
+            display: grid;
+            grid-template-columns: 70% 30%;
+            gap: 20px;
+            align-items: center;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .measurements-column {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .controls-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 15px;
+        }
+        
+        #diff {
+            font-size: 24px;
+            font-weight: 700;
+            color: #ffffff;
+            background-color: #585858;
+            padding: 8px 12px;
+            border-radius: 6px;
+            text-align: right;
+            display: inline-block;
+        }
+        
+        #duration {
+            font-size: 20px;
+            color: #666;
+            text-align: right;
+            font-weight: 600;
+        }
+        
+        .row {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+    </style>
+</head>
+<body>
+    <div id="launchOverlay"><button id="launchBtn">ЗАПУСТИТЬ</button></div>
+    <div id="app">
+        <h1>Измерение шума</h1>
+        <div id="status">Измерение уровня шума</div>
+        <div id="spectrumWrap">
+            <canvas id="freqCanvas"></canvas>
+        </div>
+        <div class="bottom-area">
+            <div class="measurements-column">
+                <div id="avgBefore">До: -- dB</div>
+                <div id="avgAfter">После: -- dB</div>
+                <div id="diff">Разница: -- dB</div>
+                <div id="avg" style="display:none">Среднее: -- dB</div>
+            </div>
+            <div class="controls-panel">
+                <div id="duration">10 секунд</div>
+                <div class="row">
+                    <button id="toggleBtn">Старт</button>
+                    <button id="resetBtn">Стоп</button>
+                </div>
+            </div>
+        </div>
+        <select id="deviceList" style="display:none;"></select>
+        <div id="history">
+            
+        </div>
+    </div>
+
+    <script>
+        // JavaScript код остается без изменений
+        let audioContext = null;
+        let analyser = null;
+        let microphone = null;
+        let javascriptNode = null;
+        let rafId = null;
+        let isMeasuring = false;
+        let startTimeMs = 0;
+        // Энергетическое усреднение для dB
+        let sumRms2 = 0;
+        let countFrames = 0;
+        let deviceLabel = '';
+        
+        const diffElement = document.getElementById('diff');
+        const statusElement = document.getElementById('status');
+        const toggleBtn = document.getElementById('toggleBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const launchBtn = document.getElementById('launchBtn');
+        const deviceList = document.getElementById('deviceList');
+        const avgElement = document.getElementById('avg');
+        const avgBeforeEl = document.getElementById('avgBefore');
+        const avgAfterEl = document.getElementById('avgAfter');
+        const durationElement = document.getElementById('duration');
+        const historyListEl = null;
+        const clearHistoryBtn = null;
+        const freqCanvas = document.getElementById('freqCanvas');
+        
+        const freqCtx = freqCanvas.getContext ? freqCanvas.getContext('2d') : null;
+        let freqGradient = null;
+        let hoverX = null;
+        let sampleRate = 48000;
+        let currentFftSize = 2048;
+        // Два этапа измерения: до/после
+        let measurementPhase = 'before'; // 'before' | 'after'
+        // Медианное сглаживание спектра по окну из 80 кадров
+        const SMOOTH_WINDOW = 80;
+        let spectrumBuffer = [];
+        let currentSmoothed = null;
+        let beforeSmoothed = null;
+        let afterSmoothed = null;
+        let avgBeforeVal = null;
+        let avgAfterVal = null;
+        const measurementLimitSec = 10;
+        let endTimeMs = 0;
+        
+        // Генератор белого шума
+        let noiseContext = null;
+        let noiseSource = null;
+        let noiseGain = null;
+        let isNoisePlaying = false;
+
+        // Проверка поддержки getUserMedia
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            toggleBtn.disabled = true;
+        }
+
+        // Функции для работы с улучшенным белым шумом
+        function createWhiteNoise() {
+            // Создаем AudioContext только один раз
+            if (!noiseContext) {
+                noiseContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            // Создаем источник белого шума
+            const bufferSize = 2 * noiseContext.sampleRate; // 2 секунды буфера
+            const noiseBuffer = noiseContext.createBuffer(1, bufferSize, noiseContext.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            
+            // Создаем улучшенный шум с акцентом на низкие частоты
+            for (let i = 0; i < bufferSize; i++) {
+                // Базовый белый шум
+                let sample = Math.random() * 2 - 1;
+                
+                // Добавляем низкочастотный компонент (100-400 Гц) - уменьшенный акцент
+                const time = i / noiseContext.sampleRate;
+                const lowFreq1 = Math.sin(2 * Math.PI * 100 * time) * 0.15; // 100 Гц - уменьшено
+                const lowFreq2 = Math.sin(2 * Math.PI * 200 * time) * 0.1; // 200 Гц - уменьшено
+                const lowFreq3 = Math.sin(2 * Math.PI * 300 * time) * 0.08; // 300 Гц - уменьшено
+                const lowFreq4 = Math.sin(2 * Math.PI * 400 * time) * 0.05; // 400 Гц - уменьшено
+                
+                // Комбинируем белый шум с низкочастотными компонентами - больше белого шума
+                sample = (sample * 0.8) + (lowFreq1 + lowFreq2 + lowFreq3 + lowFreq4);
+                
+                // Ограничиваем амплитуду
+                output[i] = Math.max(-1, Math.min(1, sample));
+            }
+            
+            // Создаем источник и gain node КАЖДЫЙ РАЗ
+            noiseSource = noiseContext.createBufferSource();
+            noiseSource.buffer = noiseBuffer;
+            noiseSource.loop = true; // зацикливаем шум
+            
+            noiseGain = noiseContext.createGain();
+            noiseGain.gain.value = 0; // начинаем с нулевой громкости
+            
+            // Создаем фильтр для дополнительного акцента на низких частотах
+            const lowpassFilter = noiseContext.createBiquadFilter();
+            lowpassFilter.type = 'lowpass';
+            lowpassFilter.frequency.value = 800; // обрезаем высокие частоты
+            lowpassFilter.Q.value = 0.5; // мягкий спад
+            
+            // Создаем фильтр высоких частот для более глубокого звука
+            const highpassFilter = noiseContext.createBiquadFilter();
+            highpassFilter.type = 'highpass';
+            highpassFilter.frequency.value = 50; // обрезаем очень низкие частоты
+            
+            // Подключаем цепочку: источник -> highpass -> lowpass -> gain -> выход
+            noiseSource.connect(highpassFilter);
+            highpassFilter.connect(lowpassFilter);
+            lowpassFilter.connect(noiseGain);
+            noiseGain.connect(noiseContext.destination);
+        }
+
+        function startWhiteNoise() {
+            console.log('startWhiteNoise вызван, isNoisePlaying:', isNoisePlaying);
+            
+            if (isNoisePlaying) {
+                console.log('Шум уже играет, выход');
+                return;
+            }
+            
+            // Всегда создаем новый источник
+            createWhiteNoise();
+            
+            if (noiseContext.state === 'suspended') {
+                noiseContext.resume();
+            }
+            
+            if (noiseSource && noiseGain) {
+                try {
+                    // Запускаем источник
+                    noiseSource.start();
+                    isNoisePlaying = true;
+                    console.log('Белый шум ЗАПУЩЕН');
+                    
+                    // Плавное зажигание за 2 секунды
+                    const currentTime = noiseContext.currentTime;
+                    noiseGain.gain.setValueAtTime(0, currentTime); // начинаем с 0
+                    noiseGain.gain.linearRampToValueAtTime(1.0, currentTime + 2.0); // доходим до максимума за 2 сек
+                } catch(e) {
+                    console.error('Ошибка запуска белого шума:', e);
+                    isNoisePlaying = false;
+                }
+            } else {
+                console.error('noiseSource или noiseGain не создан!');
+            }
+        }
+
+        function stopWhiteNoise() {
+            console.log('stopWhiteNoise вызван, isNoisePlaying:', isNoisePlaying);
+            
+            if (!isNoisePlaying) {
+                console.log('Шум не играет, выход');
+                return;
+            }
+            
+            if (noiseSource) {
+                try {
+                    noiseSource.stop();
+                    noiseSource.disconnect(); // Отключаем старый источник
+                    isNoisePlaying = false;
+                    console.log('Белый шум ОСТАНОВЛЕН');
+                } catch(e) {
+                    console.error('Ошибка остановки белого шума:', e);
+                    isNoisePlaying = false;
+                }
+            }
+            
+            // Отключаем gain для гарантии
+            if (noiseGain) {
+                try {
+                    noiseGain.disconnect();
+                } catch(e) {}
+            }
+            
+            // НЕ создаем новый источник здесь - создадим при запуске
+            noiseSource = null;
+            noiseGain = null;
+        }
+
+        // Экран запуска
+        launchBtn.addEventListener('click', async () => {
+            try {
+                if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                    document.documentElement.classList.add('fs');
+                }
+            } catch(e) {}
+        });
+
+        toggleBtn.addEventListener('click', async () => {
+            try {
+                if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                    document.documentElement.classList.add('fs');
+                }
+            } catch(e) {}
+            if (!isMeasuring) {
+                startMeter();
+                toggleBtn.disabled = true; // сразу блокируем до окончания измерения
+            }
+        });
+
+        document.addEventListener('fullscreenchange', () => {
+            const isFs = !!document.fullscreenElement;
+            document.documentElement.classList.toggle('fs', isFs);
+            setTimeout(initFreqCanvas, 100);
+            setTimeout(initFreqCanvas, 300);
+            setTimeout(initFreqCanvas, 500);
+        });
+        resetBtn.addEventListener('click', () => {
+            const label = resetBtn.textContent.trim();
+            if (label === 'Стоп') {
+                // Остановить текущее измерение
+                stopMeter();
+                return;
+            }
+            // «Сброс»: полностью очищает измерения и графики, но ничего не запускает
+            hardReset();
+        });
+        
+        async function startMeter() {
+            try {
+                // Убираем анимацию пульсации при нажатии Старт
+                toggleBtn.classList.remove('pulse-attention');
+                
+                // Новый цикл начинается, когда фаза ДО и нажали старт заново — очищаем старые графики/значения
+                if (measurementPhase === 'before') {
+                    beforeSmoothed = null;
+                    afterSmoothed = null;
+                    avgBeforeVal = null;
+                    avgAfterVal = null;
+                    avgBeforeEl.textContent = 'До: -- dB';
+                    avgAfterEl.textContent = 'После: -- dB';
+                    diffElement.textContent = 'Разница: -- dB';
+                    try {
+                        const rect = freqCanvas.getBoundingClientRect();
+                        freqCtx.fillStyle = '#ffffff';
+                        freqCtx.fillRect(0, 0, rect.width, rect.height);
+                    } catch(e) {}
+                }
+
+                // Используем микрофон по умолчанию — без выбора устройства
+                deviceList.style.display = 'none';
+                const selectedDeviceId = undefined;
+                deviceLabel = '';
+
+                // Запрашиваем доступ к микрофону
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        // deviceId не указываем, чтобы взять устройство по умолчанию
+                        deviceId: undefined,
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+
+                // Создаем AudioContext
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 4096;
+                analyser.smoothingTimeConstant = 0.5;
+                analyser.minDecibels = -100;
+                analyser.maxDecibels = -20;
+                sampleRate = audioContext.sampleRate || sampleRate;
+                currentFftSize = analyser.fftSize;
+
+                microphone = audioContext.createMediaStreamSource(stream);
+                microphone.connect(analyser);
+
+                // Используем AnalyserNode для получения данных
+                processAudio();
+
+                toggleBtn.disabled = true;
+                
+                // Запускаем белый шум на время измерения
+                startWhiteNoise();
+                
+
+                // Сброс накопителей для нового замера
+                sumRms2 = 0;
+                countFrames = 0;
+                avgElement.textContent = 'Среднее: -- dB';
+                durationElement.textContent = `${measurementLimitSec}`;
+                durationElement.setAttribute('data-prev', measurementLimitSec);
+                diffElement.textContent = 'Разница: -- dB';
+                startTimeMs = Date.now();
+                endTimeMs = startTimeMs + measurementLimitSec * 1000;
+                isMeasuring = true;
+                // Убираем выделение среднего при новом замере
+                avgElement.classList.remove('highlight');
+                // Инициализируем целевую строку средней в зависимости от фазы
+                if (measurementPhase === 'before') {
+                    avgBeforeEl.textContent = 'До: -- dB';
+                } else {
+                    avgAfterEl.textContent = 'После: -- dB';
+                }
+                // Инициализируем канвас спектра под экран
+                initFreqCanvas();
+                // Сброс буфера спектров
+                spectrumBuffer = [];
+                currentSmoothed = null;
+                // Если начинаем ПОСЛЕ, не трогаем avgBefore и beforePeaks
+
+                // Обновляем список устройств при изменении
+                // Больше не обновляем список устройств — фиксируемся на устройстве по умолчанию
+            } catch (err) {
+                console.error('Ошибка:', err);
+            }
+        }
+
+        function processAudio() {
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+            const freqArray = new Uint8Array(bufferLength);
+
+            const updateLevel = () => {
+                analyser.getByteTimeDomainData(dataArray);
+                analyser.getByteFrequencyData(freqArray);
+
+                // Вычисляем RMS (среднеквадратичное значение)
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const sample = (dataArray[i] - 128) / 128;
+                    sum += sample * sample;
+                }
+                const rms = Math.sqrt(sum / bufferLength);
+
+                // Преобразуем в dBFS и нормализуем, чтобы исключить отрицательные значения
+                let db = rms > 0 ? 20 * Math.log10(rms) : -100; // dBFS диапазон [-∞..0]
+                db = Math.max(db, -100);
+                const displayedDb = Math.min(120, Math.max(0, db + 100)); // 0..120 условных дБ
+
+                // Энергетическое усреднение и вывод в соответствующую строку (ДО/ПОСЛЕ)
+                if (isMeasuring) {
+                    sumRms2 += rms * rms;
+                    countFrames += 1;
+                    const meanRms2 = sumRms2 / Math.max(1, countFrames);
+                    const avgDbFs = meanRms2 > 0 ? 10 * Math.log10(meanRms2) : -100;
+                    const avgDisplayed = Math.min(120, Math.max(0, avgDbFs + 100));
+                    if (measurementPhase === 'before') avgBeforeEl.textContent = `До: ${avgDisplayed.toFixed(1)} dB`;
+                    else avgAfterEl.textContent = `После: ${avgDisplayed.toFixed(1)} dB`;
+                    const elapsed = Math.floor((Date.now() - startTimeMs) / 1000);
+                    const remaining = Math.max(0, measurementLimitSec - elapsed);
+                    const prevRemaining = durationElement.getAttribute('data-prev');
+                    if (prevRemaining !== String(remaining)) {
+                        durationElement.textContent = `${remaining}`;
+                        durationElement.setAttribute('data-prev', remaining);
+                        // Анимация пульсации
+                        durationElement.classList.remove('pulse');
+                        void durationElement.offsetWidth; // trigger reflow
+                        durationElement.classList.add('pulse');
+                        setTimeout(() => {
+                            durationElement.classList.remove('pulse');
+                        }, 300);
+                    }
+                    if (Date.now() >= endTimeMs) {
+                        stopMeter();
+                        return;
+                    }
+                }
+
+                // Обновляем разницу (ПОСЛЕ - ДО) при второй фазе
+                if (measurementPhase === 'after') {
+                    const beforeVal = (avgBeforeVal !== null && !isNaN(avgBeforeVal)) ? avgBeforeVal : null;
+                    const currentMeanRms2 = (sumRms2 + rms * rms) / Math.max(1, countFrames + 1);
+                    const currentAvgDbFs = currentMeanRms2 > 0 ? 10 * Math.log10(currentMeanRms2) : -100;
+                    const currentAvgDisplay = Math.min(120, Math.max(0, currentAvgDbFs + 100));
+                    if (beforeVal !== null) {
+                        const diffDb = currentAvgDisplay - beforeVal;
+                        // Конверсия дБ в мощностное отношение: P2/P1 = 10^(ΔdB/10)
+                        const powerRatio = Math.pow(10, diffDb / 10);
+                        const percent = (powerRatio - 1) * 100;
+                        const sign = percent >= 0 ? '+' : '';
+                        diffElement.textContent = `Разница: ${diffDb.toFixed(1)} dB (${sign}${percent.toFixed(0)}%)`;
+                    }
+                }
+
+                // Обновление буфера спектров и расчёт медианного профиля
+                if (isMeasuring) {
+                    spectrumBuffer.push(new Uint8Array(freqArray));
+                    if (spectrumBuffer.length > SMOOTH_WINDOW) spectrumBuffer.shift();
+                    currentSmoothed = medianSpectrum(spectrumBuffer);
+                }
+                // Рисуем спектр (сглаженный, если доступен)
+                drawFrequencyResponse(currentSmoothed || freqArray);
+
+                rafId = requestAnimationFrame(updateLevel);
+            };
+
+            updateLevel();
+        }
+
+        function stopMeter() {
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+                rafId = null;
+            }
+            if (microphone) {
+                microphone.disconnect();
+            }
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            if (navigator.mediaDevices) {
+                navigator.mediaDevices.removeEventListener('devicechange', updateDeviceList);
+            }
+            
+            // Останавливаем белый шум
+            stopWhiteNoise();
+            
+            // Определяем следующий шаг для кнопки
+            if (measurementPhase === 'before') {
+                toggleBtn.textContent = 'Старт';
+            } else {
+                toggleBtn.textContent = 'Старт';
+            }
+            toggleBtn.disabled = false;
+            toggleBtn.classList.remove('stop');
+            deviceList.style.display = 'none';
+
+            // Сбрасываем флаг измерения ДО обработки итогов, чтобы живая линия не рисовалась
+            const wasMeasuring = isMeasuring;
+            isMeasuring = false;
+
+            // Итог среднего (энергетическое усреднение)
+            if (wasMeasuring) {
+                const meanRms2 = countFrames > 0 ? (sumRms2 / countFrames) : 0;
+                const avgDbFs = meanRms2 > 0 ? 10 * Math.log10(meanRms2) : -100;
+                const avg = avgDbFs + 100;
+                const durationSec = Math.floor((Date.now() - startTimeMs) / 1000);
+                if (avg !== null) {
+                    // Фиксируем по фазам и показываем крупно соответствующим цветом
+                    if (measurementPhase === 'before') {
+                        avgBeforeVal = Number(avg.toFixed(1));
+                        avgBeforeEl.textContent = `До: ${avgBeforeVal.toFixed(1)} dB`;
+                    } else {
+                        avgAfterVal = Number(avg.toFixed(1));
+                        avgAfterEl.textContent = `После: ${avgAfterVal.toFixed(1)} dB`;
+                        if (avgBeforeVal !== null) {
+                            const diffDb = avgAfterVal - avgBeforeVal;
+                            const powerRatio = Math.pow(10, diffDb / 10);
+                            const percent = (powerRatio - 1) * 100;
+                            const sign = percent >= 0 ? '+' : '';
+                            diffElement.textContent = `Разница: ${diffDb.toFixed(1)} dB (${sign}${percent.toFixed(0)}%)`;
+                        }
+                    }
+                }
+                // Сохраняем сглаженную АЧХ для визуализации по фазам (с доп. сглаживанием для плавности линии)
+                if (currentSmoothed) {
+                    const extraSmoothed = smoothSpectrum(currentSmoothed, 12);
+                    if (measurementPhase === 'before') beforeSmoothed = new Uint8Array(extraSmoothed);
+                    else afterSmoothed = new Uint8Array(extraSmoothed);
+                }
+                // Финальная отрисовка сглаженной АЧХ
+                try {
+                    const arr = currentSmoothed || new Uint8Array(1024);
+                    drawFrequencyResponse(arr);
+                } catch(e) { console.warn('Не удалось отрисовать финальную АЧХ', e); }
+            }
+
+            isMeasuring = false;
+            // Переключаем фазу и управляем подписями кнопок
+            if (measurementPhase === 'before') {
+                measurementPhase = 'after';
+                toggleBtn.textContent = 'Старт';
+                resetBtn.textContent = 'Стоп';
+                toggleBtn.style.display = 'inline-block';
+            } else {
+                measurementPhase = 'before';
+                // Второе завершение — скрываем кнопку "Заново" и оставляем только "Завершить"
+                toggleBtn.style.display = 'none';
+                resetBtn.textContent = 'Завершить';
+            }
+        }
+
+        function hardReset() {
+            // Остановить активные процессы
+            if (isMeasuring) {
+                if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+                try { if (microphone) microphone.disconnect(); } catch(e) {}
+                try { if (audioContext) { audioContext.close(); audioContext = null; } } catch(e) {}
+                try { navigator.mediaDevices.removeEventListener('devicechange', updateDeviceList); } catch(e) {}
+                isMeasuring = false;
+            }
+            
+            // Останавливаем белый шум
+            stopWhiteNoise();
+            
+            // Сброс всех данных
+            beforeSmoothed = null;
+            afterSmoothed = null;
+            spectrumBuffer = [];
+            currentSmoothed = null;
+            avgBeforeVal = null;
+            avgAfterVal = null;
+            sumRms2 = 0;
+            countFrames = 0;
+            startTimeMs = 0;
+            endTimeMs = 0;
+            measurementPhase = 'before';
+            // Сброс UI
+            avgBeforeEl.textContent = 'До: -- dB';
+            avgAfterEl.textContent = 'После: -- dB';
+            diffElement.textContent = 'Разница: -- dB';
+            durationElement.textContent = `${measurementLimitSec} секунд`;
+            toggleBtn.textContent = 'Старт';
+            toggleBtn.classList.remove('stop');
+            toggleBtn.disabled = false; // гарантируем, что старт снова активен
+            toggleBtn.style.display = 'inline-block'; // показываем кнопку снова
+            resetBtn.textContent = 'Стоп';
+            // Включаем анимацию пульсации для привлечения внимания
+            toggleBtn.classList.add('pulse-attention');
+            // Очистка графика
+            try {
+                const rect = freqCanvas.getBoundingClientRect();
+                freqCtx.fillStyle = '#ffffff';
+                freqCtx.fillRect(0, 0, rect.width, rect.height);
+                drawFrequencyResponse(new Uint8Array(currentFftSize / 2));
+            } catch(e) {}
+        }
+
+        async function updateDeviceList() {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputDevices = devices.filter(device => device.kind === 'audioinput');
+
+                deviceList.innerHTML = '';
+                audioInputDevices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Микрофон ${device.deviceId.substring(0, 5)}`;
+                    deviceList.appendChild(option);
+                });
+            } catch (err) {
+                console.error('Ошибка обновления списка устройств:', err);
+            }
+        }
+
+        // Обработка выбора устройства
+        deviceList.addEventListener('change', async () => {
+            // Перезапускаем с выбранным устройством
+            stopMeter();
+            setTimeout(startMeter, 100);
+        });
+
+        function renderHistory() {
+            historyListEl.innerHTML = '';
+            if (!history.length) return;
+            history.forEach(item => {
+                const li = document.createElement('li');
+                const left = document.createElement('span');
+                const right = document.createElement('span');
+                const dt = new Date(item.ts);
+                const mm = String(Math.floor(item.duration / 60)).padStart(2, '0');
+                const ss = String(item.duration % 60).padStart(2, '0');
+                left.textContent = `${dt.toLocaleDateString()} ${dt.toLocaleTimeString()}${item.device ? ' · ' + item.device : ''}`;
+                right.textContent = `${item.avg !== null ? item.avg.toFixed(1) + ' dB' : '-- dB'} · ${mm}:${ss}`;
+                li.appendChild(left);
+                li.appendChild(right);
+                historyListEl.appendChild(li);
+            });
+        }
+
+        function saveHistory() {
+            try { localStorage.setItem('noiseMeterHistory', JSON.stringify(history.slice(0, 100))); } catch(e) {}
+        }
+
+        function clearHistory() {
+            history = [];
+            saveHistory();
+            renderHistory();
+            clearHistoryBtn.disabled = true;
+        }
+
+        // ====== Спектр (АЧХ) ======
+        function initFreqCanvas() {
+            if (!freqCtx) return;
+            const dpr = window.devicePixelRatio || 1;
+            const rect = freqCanvas.getBoundingClientRect();
+            console.log('Canvas rect:', rect.width, 'x', rect.height);
+            console.log('Window size:', window.innerWidth, 'x', window.innerHeight);
+            console.log('Fullscreen:', !!document.fullscreenElement);
+            freqCanvas.width = Math.floor(rect.width * dpr);
+            freqCanvas.height = Math.floor(rect.height * dpr);
+            freqCtx.setTransform(1, 0, 0, 1, 0, 0);
+            freqCtx.scale(dpr, dpr);
+            // Градиент заливки столбцов
+            freqGradient = freqCtx.createLinearGradient(0, 0, 0, rect.height);
+            freqGradient.addColorStop(0, 'rgba(1,100,79,0.9)');
+            freqGradient.addColorStop(1, 'rgba(1,100,79,0.2)');
+        }
+
+        // Подсобные: медиана спектров (используется в процессе измерения)
+        function medianSpectrum(buffer) {
+            if (!buffer.length) return null;
+            const len = buffer[0].length;
+            const out = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                const arr = new Array(buffer.length);
+                for (let k = 0; k < buffer.length; k++) arr[k] = buffer[k][i];
+                arr.sort((a,b) => a-b);
+                const mid = Math.floor(arr.length / 2);
+                out[i] = arr.length % 2 ? arr[mid] : Math.round((arr[mid-1] + arr[mid]) / 2);
+            }
+            return out;
+        }
+
+        // Дополнительное сглаживание для плавных линий (адаптивное окно + двойной проход)
+        function smoothSpectrum(spectrum, baseWindowSize = 12) {
+            if (!spectrum || spectrum.length === 0) return spectrum;
+            let out = new Uint8Array(spectrum.length);
+            
+            // Первый проход: адаптивное окно
+            for (let i = 0; i < spectrum.length; i++) {
+                const t = i / spectrum.length;
+                const adaptiveWindow = Math.round(baseWindowSize * (1 + t * 3)); // от 12 до 48
+                const half = Math.floor(adaptiveWindow / 2);
+                let sum = 0;
+                let count = 0;
+                for (let j = Math.max(0, i - half); j <= Math.min(spectrum.length - 1, i + half); j++) {
+                    sum += spectrum[j];
+                    count++;
+                }
+                out[i] = Math.round(sum / count);
+            }
+            
+            // Второй проход: дополнительное сглаживание для ультра-плавности
+            const out2 = new Uint8Array(spectrum.length);
+            for (let i = 0; i < spectrum.length; i++) {
+                const window = 6;
+                const half = Math.floor(window / 2);
+                let sum = 0;
+                let count = 0;
+                for (let j = Math.max(0, i - half); j <= Math.min(spectrum.length - 1, i + half); j++) {
+                    sum += out[j];
+                    count++;
+                }
+                out2[i] = Math.round(sum / count);
+            }
+            
+            return out2;
+        }
+
+        function drawFrequencyResponse(freqArray) {
+            if (!freqCtx) return;
+            const rect = freqCanvas.getBoundingClientRect();
+            const width = rect.width;
+            const height = rect.height;
+
+            // Очистка фона
+            freqCtx.fillStyle = '#ffffff';
+            freqCtx.fillRect(0, 0, width, height);
+
+            // Логарифмическая шкала частоты
+            const bins = freqArray.length;
+            const minF = 20;
+            const maxF = sampleRate / 2;
+            const logMin = Math.log10(minF);
+            const logMax = Math.log10(maxF);
+
+            // Позиционируем статус посередине между 500 Гц и 1 кГц
+            try {
+                const fA = 500;
+                const fB = 1000;
+                const xA = ((Math.log10(fA) - logMin) / (logMax - logMin)) * width;
+                const xB = ((Math.log10(fB) - logMin) / (logMax - logMin)) * width;
+                const midX = (xA + xB) / 2;
+                statusElement.style.left = `${midX}px`;
+                statusElement.style.transform = 'translateX(-50%)';
+                statusElement.style.top = '8px';
+            } catch(e) {}
+
+            // Сначала рисуем горизонтальные линии уровня для плавности восприятия
+            freqCtx.strokeStyle = 'rgba(1,100,79,0.06)';
+            freqCtx.lineWidth = 1;
+            for (let i = 1; i <= 4; i++) {
+                const y = (height / 5) * i;
+                freqCtx.beginPath();
+                freqCtx.moveTo(0, y);
+                freqCtx.lineTo(width, y);
+                freqCtx.stroke();
+            }
+
+            // Рисуем вертикальную сетку (более тонко и нежно)
+            const ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+            const tickPositions = [];
+            freqCtx.strokeStyle = 'rgba(1,100,79,0.10)';
+            freqCtx.lineWidth = 0.8;
+            ticks.forEach(f => {
+                if (f > maxF) return;
+                const x = ((Math.log10(f) - logMin) / (logMax - logMin)) * width;
+                tickPositions.push({ x, f });
+                // вертикальная линия сетки
+                freqCtx.beginPath();
+                freqCtx.moveTo(x, 0);
+                freqCtx.lineTo(x, height);
+                freqCtx.stroke();
+            });
+
+            // Живая линия во время измерения - УЛУЧШЕННАЯ визуализация
+            // Используем то же сглаживание что и для финального результата
+            if (isMeasuring && analyser && freqArray && freqArray.length === bins) {
+                // ВАЖНО: используем currentSmoothed - он уже содержит медианное сглаживание
+                const liveData = currentSmoothed || freqArray;
+                const isAfter = measurementPhase === 'after';
+                
+                // Более яркие и насыщенные градиенты
+                const gradientLive = freqCtx.createLinearGradient(0, 0, 0, height);
+                if (isAfter) {
+                    gradientLive.addColorStop(0, 'rgba(1,100,79,0.65)');      // Ярче!
+                    gradientLive.addColorStop(0.5, 'rgba(1,100,79,0.35)');
+                    gradientLive.addColorStop(1, 'rgba(1,100,79,0.02)');
+                } else {
+                    gradientLive.addColorStop(0, 'rgba(229,57,53,0.65)');     // Ярче!
+                    gradientLive.addColorStop(0.5, 'rgba(229,57,53,0.35)');
+                    gradientLive.addColorStop(1, 'rgba(229,57,53,0.02)');
+                }
+                
+                // Рисуем заливку
+                freqCtx.beginPath();
+                freqCtx.moveTo(0, height - 20);
+                for (let c = 0; c < width; c++) {
+                    const t = c / (width - 1);
+                    const logF = logMin + t * (logMax - logMin);
+                    const f = Math.pow(10, logF);
+                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                    let v = liveData[bin] / 255;
+                    v = Math.pow(v, 0.85);
+                    const hfGain = 0.85 + 0.3 * t;
+                    let vDraw = Math.min(1, v * hfGain);
+                    vDraw = Math.min(0.9, vDraw);
+                    const h = vDraw * (height - 30);
+                    const y = height - h - 20;
+                    freqCtx.lineTo(c, y);
+                }
+                freqCtx.lineTo(width, height - 20);
+                freqCtx.closePath();
+                freqCtx.fillStyle = gradientLive;
+                freqCtx.fill();
+                
+                // Рисуем линию поверх - более толстая и яркая
+                freqCtx.lineWidth = 3.0;  // Было 2.5
+                freqCtx.strokeStyle = isAfter ? '#01644f' : '#e53935';
+                freqCtx.globalAlpha = 0.9;  // Было 0.7 - теперь ярче!
+                freqCtx.beginPath();
+                for (let c = 0; c < width; c++) {
+                    const t = c / (width - 1);
+                    const logF = logMin + t * (logMax - logMin);
+                    const f = Math.pow(10, logF);
+                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                    let v = liveData[bin] / 255;
+                    v = Math.pow(v, 0.85);
+                    const hfGain = 0.85 + 0.3 * t;
+                    let vDraw = Math.min(1, v * hfGain);
+                    vDraw = Math.min(0.9, vDraw);
+                    const h = vDraw * (height - 30);
+                    const y = height - h - 20;
+                    if (c === 0) freqCtx.moveTo(c, y); else freqCtx.lineTo(c, y);
+                }
+                freqCtx.stroke();
+                freqCtx.globalAlpha = 1.0;
+            }
+
+            // Линия АЧХ ДО (красная горка с УЛУЧШЕННЫМ градиентом)
+            if (beforeSmoothed && beforeSmoothed.length === bins) {
+                const gradientBefore = freqCtx.createLinearGradient(0, 0, 0, height);
+                gradientBefore.addColorStop(0, 'rgba(229,57,53,0.7)');        // Ярче!
+                gradientBefore.addColorStop(0.4, 'rgba(229,57,53,0.4)');
+                gradientBefore.addColorStop(0.7, 'rgba(229,57,53,0.15)');
+                gradientBefore.addColorStop(1, 'rgba(229,57,53,0.02)');
+                
+                // Рисуем заливку
+                freqCtx.beginPath();
+                freqCtx.moveTo(0, height - 20);
+                for (let c = 0; c < width; c++) {
+                    const t = c / (width - 1);
+                    const logF = logMin + t * (logMax - logMin);
+                    const f = Math.pow(10, logF);
+                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                    let v = beforeSmoothed[bin] / 255;
+                    v = Math.pow(v, 0.85);
+                    const hfGain = 0.85 + 0.3 * t;
+                    let vDraw = Math.min(1, v * hfGain);
+                    // Ограничение на 90 дБ (0.9 от максимума)
+                    vDraw = Math.min(0.9, vDraw);
+                    const h = vDraw * (height - 30);
+                    const y = height - h - 20;
+                    freqCtx.lineTo(c, y);
+                }
+                freqCtx.lineTo(width, height - 20);
+                freqCtx.closePath();
+                freqCtx.fillStyle = gradientBefore;
+                freqCtx.fill();
+                
+                // Линия поверх - более толстая и яркая
+                freqCtx.lineWidth = 3.0;  // Было 2.5
+                freqCtx.strokeStyle = '#e53935';
+                freqCtx.globalAlpha = 1.0;  // Полная яркость
+                freqCtx.beginPath();
+                for (let c = 0; c < width; c++) {
+                    const t = c / (width - 1);
+                    const logF = logMin + t * (logMax - logMin);
+                    const f = Math.pow(10, logF);
+                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                    let v = beforeSmoothed[bin] / 255;
+                    v = Math.pow(v, 0.85);
+                    const hfGain = 0.85 + 0.3 * t;
+                    let vDraw = Math.min(1, v * hfGain);
+                    // Ограничение на 90 дБ (0.9 от максимума)
+                    vDraw = Math.min(0.9, vDraw);
+                    const h = vDraw * (height - 30);
+                    const y = height - h - 20;
+                    if (c === 0) freqCtx.moveTo(c, y); else freqCtx.lineTo(c, y);
+                }
+                freqCtx.stroke();
+            }
+            // Линия АЧХ ПОСЛЕ (зелёная горка с УЛУЧШЕННЫМ градиентом)
+            if (afterSmoothed && afterSmoothed.length === bins) {
+                const gradientAfter = freqCtx.createLinearGradient(0, 0, 0, height);
+                gradientAfter.addColorStop(0, 'rgba(1,100,79,0.7)');          // Ярче!
+                gradientAfter.addColorStop(0.4, 'rgba(1,100,79,0.4)');
+                gradientAfter.addColorStop(0.7, 'rgba(1,100,79,0.15)');
+                gradientAfter.addColorStop(1, 'rgba(1,100,79,0.02)');
+                
+                // Рисуем заливку
+                freqCtx.beginPath();
+                freqCtx.moveTo(0, height - 20);
+                for (let c = 0; c < width; c++) {
+                    const t = c / (width - 1);
+                    const logF = logMin + t * (logMax - logMin);
+                    const f = Math.pow(10, logF);
+                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                    let v = afterSmoothed[bin] / 255;
+                    v = Math.pow(v, 0.85);
+                    const hfGain = 0.85 + 0.3 * t;
+                    let vDraw = Math.min(1, v * hfGain);
+                    // Ограничение на 90 дБ (0.9 от максимума)
+                    vDraw = Math.min(0.9, vDraw);
+                    const h = vDraw * (height - 30);
+                    const y = height - h - 20;
+                    freqCtx.lineTo(c, y);
+                }
+                freqCtx.lineTo(width, height - 20);
+                freqCtx.closePath();
+                freqCtx.fillStyle = gradientAfter;
+                freqCtx.fill();
+                
+                // Линия поверх - более толстая и яркая
+                freqCtx.lineWidth = 3.0;  // Было 2.5
+                freqCtx.strokeStyle = '#01644f';
+                freqCtx.globalAlpha = 1.0;  // Полная яркость
+                freqCtx.beginPath();
+                for (let c = 0; c < width; c++) {
+                    const t = c / (width - 1);
+                    const logF = logMin + t * (logMax - logMin);
+                    const f = Math.pow(10, logF);
+                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                    let v = afterSmoothed[bin] / 255;
+                    v = Math.pow(v, 0.85);
+                    const hfGain = 0.85 + 0.3 * t;
+                    let vDraw = Math.min(1, v * hfGain);
+                    // Ограничение на 90 дБ (0.9 от максимума)
+                    vDraw = Math.min(0.9, vDraw);
+                    const h = vDraw * (height - 30);
+                    const y = height - h - 20;
+                    if (c === 0) freqCtx.moveTo(c, y); else freqCtx.lineTo(c, y);
+                }
+                freqCtx.stroke();
+            }
+
+            // Теперь наносим риски и подписи поверх графиков
+            freqCtx.fillStyle = '#6b8488';
+            freqCtx.font = '12px Arial';
+            tickPositions.forEach(tp => {
+                const x = tp.x;
+                // риска снизу
+                freqCtx.strokeStyle = 'rgba(1,100,79,0.25)';
+                freqCtx.beginPath();
+                freqCtx.moveTo(x, height - 8);
+                freqCtx.lineTo(x, height);
+                freqCtx.stroke();
+                // подпись
+                const f = tp.f;
+                const label = f >= 1000 ? `${(f/1000).toFixed(f===1000||f===2000||f===5000||f===10000||f===20000?0:1)}k` : `${f}`;
+                const textW = freqCtx.measureText(label).width;
+                const textX = Math.min(Math.max(0, x - textW / 2), width - textW);
+                freqCtx.fillText(label, textX, height - 10);
+            });
+
+            // Подсказки по ховеру отключены по требованию
+        }
+
+        // Интерактивность: ховер/тач
+        if (freqCanvas) {
+            window.addEventListener('resize', () => { initFreqCanvas(); });
+            window.addEventListener('orientationchange', () => { setTimeout(initFreqCanvas, 100); });
+            setTimeout(initFreqCanvas, 0);
+        }
+        
+        // Включаем анимацию пульсации при первой загрузке
+        toggleBtn.classList.add('pulse-attention');
+    </script>
+</body>
+</html>
