@@ -4,31 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Шумомер</title>
-    
-    <!-- PWA Meta Tags -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#01644f">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Шумомер">
-    <link rel="apple-touch-icon" href="icon-192.png">
-    
-    <!-- Service Worker Registration -->
-    <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./service-worker.js')
-          .then(registration => {
-            console.log('PWA: Service Worker зарегистрирован', registration.scope);
-          })
-          .catch(error => {
-            console.log('PWA: Ошибка регистрации Service Worker', error);
-          });
-      });
-    }
-    </script>
-    
     <style>
         :root {
             --accent: #01644f;
@@ -716,23 +691,10 @@
             const noiseBuffer = noiseContext.createBuffer(1, bufferSize, noiseContext.sampleRate);
             const output = noiseBuffer.getChannelData(0);
             
-            // Создаем улучшенный шум с акцентом на низкие частоты
+            // Создаем чистый белый шум
             for (let i = 0; i < bufferSize; i++) {
-                // Базовый белый шум
-                let sample = Math.random() * 2 - 1;
-                
-                // Добавляем низкочастотный компонент (100-400 Гц) - уменьшенный акцент
-                const time = i / noiseContext.sampleRate;
-                const lowFreq1 = Math.sin(2 * Math.PI * 100 * time) * 0.15; // 100 Гц - уменьшено
-                const lowFreq2 = Math.sin(2 * Math.PI * 200 * time) * 0.1; // 200 Гц - уменьшено
-                const lowFreq3 = Math.sin(2 * Math.PI * 300 * time) * 0.08; // 300 Гц - уменьшено
-                const lowFreq4 = Math.sin(2 * Math.PI * 400 * time) * 0.05; // 400 Гц - уменьшено
-                
-                // Комбинируем белый шум с низкочастотными компонентами - больше белого шума
-                sample = (sample * 0.8) + (lowFreq1 + lowFreq2 + lowFreq3 + lowFreq4);
-                
-                // Ограничиваем амплитуду
-                output[i] = Math.max(-1, Math.min(1, sample));
+                // Чистый белый шум - равномерное распределение всех частот
+                output[i] = Math.random() * 2 - 1;
             }
             
             // Создаем источник и gain node КАЖДЫЙ РАЗ
@@ -743,21 +705,8 @@
             noiseGain = noiseContext.createGain();
             noiseGain.gain.value = 0; // начинаем с нулевой громкости
             
-            // Создаем фильтр для дополнительного акцента на низких частотах
-            const lowpassFilter = noiseContext.createBiquadFilter();
-            lowpassFilter.type = 'lowpass';
-            lowpassFilter.frequency.value = 800; // обрезаем высокие частоты
-            lowpassFilter.Q.value = 0.5; // мягкий спад
-            
-            // Создаем фильтр высоких частот для более глубокого звука
-            const highpassFilter = noiseContext.createBiquadFilter();
-            highpassFilter.type = 'highpass';
-            highpassFilter.frequency.value = 50; // обрезаем очень низкие частоты
-            
-            // Подключаем цепочку: источник -> highpass -> lowpass -> gain -> выход
-            noiseSource.connect(highpassFilter);
-            highpassFilter.connect(lowpassFilter);
-            lowpassFilter.connect(noiseGain);
+            // Подключаем напрямую: источник -> gain -> выход (чистый белый шум без фильтров)
+            noiseSource.connect(noiseGain);
             noiseGain.connect(noiseContext.destination);
         }
 
