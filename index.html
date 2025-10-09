@@ -935,20 +935,16 @@
                 if (isMeasuring) {
                     sumRms2 += rms * rms;
                     countFrames += 1;
-                    // Рассчитываем уровень по 1/3-октавным полосам с A-взвешиванием
+                    // Рассчитываем A-взвешенный уровень из спектра
                     let avgDisplayed = 0;
                     if (currentSmoothed && currentSmoothed.length > 0) {
-                        const bandLevels = convertToThirdOctaveBands(currentSmoothed);
-                        avgDisplayed = calculateOverallLevelFromBands(bandLevels);
-                    } else {
-                        // Фоллбэк на RMS если нет спектра
-                        const meanRms2 = sumRms2 / Math.max(1, countFrames);
-                        const avgDbFs = meanRms2 > 0 ? 10 * Math.log10(meanRms2) : -100;
-                        avgDisplayed = Math.min(120, Math.max(0, avgDbFs + 100));
+                        avgDisplayed = calculateAWeightedLevel(currentSmoothed);
                     }
                     
-                    if (measurementPhase === 'before') avgBeforeEl.textContent = `До: ${avgDisplayed.toFixed(1)} dB(A)`;
-                    else avgAfterEl.textContent = `После: ${avgDisplayed.toFixed(1)} dB(A)`;
+                    if (avgDisplayed > 0) {
+                        if (measurementPhase === 'before') avgBeforeEl.textContent = `До: ${avgDisplayed.toFixed(1)} dB(A)`;
+                        else avgAfterEl.textContent = `После: ${avgDisplayed.toFixed(1)} dB(A)`;
+                    }
                     const elapsed = Math.floor((Date.now() - startTimeMs) / 1000);
                     const remaining = Math.max(0, measurementLimitSec - elapsed);
                     const prevRemaining = durationElement.getAttribute('data-prev');
@@ -1033,23 +1029,17 @@
             const wasMeasuring = isMeasuring;
             isMeasuring = false;
 
-            // Итог среднего (расчет по 1/3-октавным полосам с A-взвешиванием)
+            // Итог среднего (A-взвешенный уровень из спектра)
             if (wasMeasuring) {
                 let avg = 0;
                 
-                // Если есть сглаженный спектр, рассчитываем через 1/3-октавные полосы
+                // Рассчитываем из финального сглаженного спектра
                 if (currentSmoothed && currentSmoothed.length > 0) {
-                    const bandLevels = convertToThirdOctaveBands(currentSmoothed);
-                    avg = calculateOverallLevelFromBands(bandLevels);
-                } else {
-                    // Фоллбэк на старый метод, если нет спектра
-                    const meanRms2 = countFrames > 0 ? (sumRms2 / countFrames) : 0;
-                    const avgDbFs = meanRms2 > 0 ? 10 * Math.log10(meanRms2) : -100;
-                    avg = avgDbFs + 100;
+                    avg = calculateAWeightedLevel(currentSmoothed);
                 }
                 
                 const durationSec = Math.floor((Date.now() - startTimeMs) / 1000);
-                if (avg !== null && avg > 0) {
+                if (avg > 0) {
                     // Фиксируем по фазам и показываем крупно соответствующим цветом
                     if (measurementPhase === 'before') {
                         avgBeforeVal = Number(avg.toFixed(1));
@@ -1235,7 +1225,7 @@
             return bands;
         }
         
-        // Преобразование линейного спектра в 1/3-октавные полосы с A-взвешиванием
+        // Преобразование линейного спектра в 1/3-октавные полосы (только для визуализации!)
         function convertToThirdOctaveBands(freqArray) {
             const bands = getThirdOctaveBands();
             const result = new Array(bands.length).fill(0);
@@ -1247,49 +1237,60 @@
                 const lowerFreq = fc / Math.pow(2, 1/6); // нижняя граница
                 const upperFreq = fc * Math.pow(2, 1/6); // верхняя граница
                 
-                let sumPower = 0;
+                let sum = 0;
                 let count = 0;
                 
-                // Собираем энергию из соответствующих бинов FFT
+                // Собираем значения из соответствующих бинов FFT
                 for (let bin = 0; bin < bins; bin++) {
                     const freq = (bin / bins) * nyquist;
                     if (freq >= lowerFreq && freq <= upperFreq) {
-                        // Преобразуем из 0-255 в линейную амплитуду
-                        const amplitude = freqArray[bin] / 255;
-                        sumPower += amplitude * amplitude;
+                        sum += freqArray[bin];
                         count++;
                     }
                 }
                 
                 if (count > 0) {
-                    // Средняя мощность в полосе
-                    const avgPower = sumPower / count;
-                    // Преобразуем в dB
-                    const dB = 20 * Math.log10(Math.max(avgPower, 1e-10));
-                    // Применяем A-взвешивание
-                    const aWeight = getAWeighting(fc);
-                    result[i] = dB + aWeight + 100; // +100 для нормализации в положительный диапазон
+                    // Среднее значение в полосе (0-255)
+                    result[i] = sum / count;
                 }
             }
             
             return result;
         }
         
-        // Расчет общего уровня шума по 1/3-октавным полосам с A-взвешиванием
-        function calculateOverallLevelFromBands(bandLevels) {
-            // Суммирование в энергетической области
-            let sumPower = 0;
-            for (let i = 0; i < bandLevels.length; i++) {
-                if (bandLevels[i] > 0) {
-                    // Преобразуем dB обратно в линейную мощность
-                    const linearPower = Math.pow(10, (bandLevels[i] - 100) / 20);
-                    sumPower += linearPower * linearPower;
+        // Расчет общего A-взвешенного уровня из спектра FFT
+        function calculateAWeightedLevel(freqArray) {
+            const bins = freqArray.length;
+            const nyquist = sampleRate / 2;
+            
+            // Применяем A-взвешивание к каждому бину и суммируем энергию
+            let sumEnergy = 0;
+            let validBins = 0;
+            
+            for (let bin = 0; bin < bins; bin++) {
+                const freq = (bin / bins) * nyquist;
+                
+                // Учитываем только диапазон 100-10000 Гц
+                if (freq >= 100 && freq <= 10000) {
+                    // Получаем A-взвешивание для этой частоты
+                    const aWeight = getAWeighting(freq);
+                    // Преобразуем из 0-255 в линейную амплитуду (analyser дает dB в диапазоне minDecibels...maxDecibels)
+                    // По умолчанию это -100...30 dB, масштабированное на 0-255
+                    const dbValue = -100 + (freqArray[bin] / 255) * 130; // -100...+30 dB
+                    // Применяем A-взвешивание
+                    const dbWeighted = dbValue + aWeight;
+                    // Преобразуем в линейную энергию
+                    const energy = Math.pow(10, dbWeighted / 10);
+                    sumEnergy += energy;
+                    validBins++;
                 }
             }
             
-            // Преобразуем обратно в dB
-            if (sumPower > 0) {
-                return 20 * Math.log10(Math.sqrt(sumPower)) + 100;
+            if (validBins > 0 && sumEnergy > 0) {
+                // Преобразуем обратно в dB с коррекцией для калибровки
+                // Calibration offset: разница между измеренным и реальным
+                const calibrationOffset = -17; // Корректировка на основе сравнения с профессиональным прибором (101.9 - 85 = 17)
+                return 10 * Math.log10(sumEnergy / validBins) + calibrationOffset;
             }
             return 0;
         }
@@ -1400,11 +1401,14 @@
             
             for (let i = 0; i < bands.length; i++) {
                 const freq = bands[i];
-                const level = bandLevels[i];
+                const level = bandLevels[i]; // 0-255
                 
-                if (level > 0 && level >= minDB && level <= maxDB) {
+                if (level > 0) {
                     const x = leftMargin + i * barWidth;
-                    const barHeight = ((level - minDB) / (maxDB - minDB)) * graphHeight;
+                    // Масштабируем 0-255 на высоту графика с учетом dB
+                    // Предполагаем что 255 = максимум (~100 dB), 0 = минимум (~30 dB)
+                    const normalizedLevel = (level / 255) * (maxDB - minDB) + minDB;
+                    const barHeight = ((normalizedLevel - minDB) / (maxDB - minDB)) * graphHeight;
                     const y = 10 + graphHeight - barHeight;
                     
                     // Цвет столбца в зависимости от фазы измерения
@@ -1432,10 +1436,11 @@
             if (beforeSmoothed && beforeSmoothed.length > 0 && measurementPhase !== 'before') {
                 const beforeBands = convertToThirdOctaveBands(beforeSmoothed);
                 for (let i = 0; i < bands.length; i++) {
-                    const level = beforeBands[i];
-                    if (level > 0 && level >= minDB && level <= maxDB) {
+                    const level = beforeBands[i]; // 0-255
+                    if (level > 0) {
                         const x = leftMargin + i * barWidth;
-                        const barHeight = ((level - minDB) / (maxDB - minDB)) * graphHeight;
+                        const normalizedLevel = (level / 255) * (maxDB - minDB) + minDB;
+                        const barHeight = ((normalizedLevel - minDB) / (maxDB - minDB)) * graphHeight;
                         const y = 10 + graphHeight - barHeight;
                         
                         freqCtx.fillStyle = 'rgba(229,57,53,0.5)';
@@ -1448,10 +1453,11 @@
             if (afterSmoothed && afterSmoothed.length > 0) {
                 const afterBands = convertToThirdOctaveBands(afterSmoothed);
                 for (let i = 0; i < bands.length; i++) {
-                    const level = afterBands[i];
-                    if (level > 0 && level >= minDB && level <= maxDB) {
+                    const level = afterBands[i]; // 0-255
+                    if (level > 0) {
                         const x = leftMargin + i * barWidth;
-                        const barHeight = ((level - minDB) / (maxDB - minDB)) * graphHeight;
+                        const normalizedLevel = (level / 255) * (maxDB - minDB) + minDB;
+                        const barHeight = ((normalizedLevel - minDB) / (maxDB - minDB)) * graphHeight;
                         const y = 10 + graphHeight - barHeight;
                         
                         freqCtx.fillStyle = 'rgba(1,100,79,0.5)';
