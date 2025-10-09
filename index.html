@@ -1260,6 +1260,8 @@
         
         // Расчет общего A-взвешенного уровня из спектра FFT
         function calculateAWeightedLevel(freqArray) {
+            if (!freqArray || freqArray.length === 0) return 0;
+            
             const bins = freqArray.length;
             const nyquist = sampleRate / 2;
             
@@ -1271,26 +1273,35 @@
                 const freq = (bin / bins) * nyquist;
                 
                 // Учитываем только диапазон 100-10000 Гц
-                if (freq >= 100 && freq <= 10000) {
+                if (freq >= 100 && freq <= 10000 && freqArray[bin] > 0) {
                     // Получаем A-взвешивание для этой частоты
                     const aWeight = getAWeighting(freq);
-                    // Преобразуем из 0-255 в линейную амплитуду (analyser дает dB в диапазоне minDecibels...maxDecibels)
-                    // По умолчанию это -100...30 dB, масштабированное на 0-255
-                    const dbValue = -100 + (freqArray[bin] / 255) * 130; // -100...+30 dB
+                    
+                    // Преобразуем из 0-255 в dB
+                    // analyser по умолчанию: minDecibels=-100, maxDecibels=-30
+                    const dbValue = -100 + (freqArray[bin] / 255) * 70; // -100...-30 dB
+                    
                     // Применяем A-взвешивание
                     const dbWeighted = dbValue + aWeight;
+                    
                     // Преобразуем в линейную энергию
                     const energy = Math.pow(10, dbWeighted / 10);
-                    sumEnergy += energy;
-                    validBins++;
+                    if (isFinite(energy) && energy > 0) {
+                        sumEnergy += energy;
+                        validBins++;
+                    }
                 }
             }
             
             if (validBins > 0 && sumEnergy > 0) {
-                // Преобразуем обратно в dB с коррекцией для калибровки
-                // Calibration offset: разница между измеренным и реальным
-                const calibrationOffset = -17; // Корректировка на основе сравнения с профессиональным прибором (101.9 - 85 = 17)
-                return 10 * Math.log10(sumEnergy / validBins) + calibrationOffset;
+                // Преобразуем обратно в dB
+                const dbLevel = 10 * Math.log10(sumEnergy / validBins);
+                
+                // Нормализация на положительные значения и калибровка
+                const calibrationOffset = 0; // Временно 0, будет настроено после тестов
+                const normalizedLevel = dbLevel + 100 + calibrationOffset;
+                
+                return Math.max(0, Math.min(120, normalizedLevel));
             }
             return 0;
         }
