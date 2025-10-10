@@ -4,31 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Шумомер</title>
-
-    <!-- PWA Meta Tags -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#01644f">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Шумомер">
-    <link rel="apple-touch-icon" href="icon-192.png">
-
-    <!-- Service Worker Registration -->
-    <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./service-worker.js')
-          .then(registration => {
-            console.log('PWA: Service Worker зарегистрирован', registration.scope);
-          })
-          .catch(error => {
-            console.log('PWA: Ошибка регистрации Service Worker', error);
-          });
-      });
-    }
-    </script>
-
     <style>
         :root {
             --accent: #01644f;
@@ -969,13 +944,28 @@
                 analyser.getByteTimeDomainData(dataArray);
                 analyser.getByteFrequencyData(freqArray);
 
-                // Вычисляем RMS (среднеквадратичное значение)
+                // Вычисляем RMS из частотного спектра в диапазоне 400-10000 Гц
+                // чтобы исключить низкочастотный шум
+                const nyquist = sampleRate / 2;
+                const minFreq = 400;  // минимальная частота для расчета
+                const maxFreq = 10000; // максимальная частота для расчета
+                
                 let sum = 0;
+                let validSamples = 0;
+                
                 for (let i = 0; i < bufferLength; i++) {
-                    const sample = (dataArray[i] - 128) / 128;
-                    sum += sample * sample;
+                    const freq = (i / bufferLength) * nyquist;
+                    
+                    // Учитываем только частоты в диапазоне 400-10000 Гц
+                    if (freq >= minFreq && freq <= maxFreq) {
+                        // Конвертируем из 0-255 в линейную амплитуду
+                        const amplitude = freqArray[i] / 255;
+                        sum += amplitude * amplitude;
+                        validSamples++;
+                    }
                 }
-                const rms = Math.sqrt(sum / bufferLength);
+                
+                const rms = validSamples > 0 ? Math.sqrt(sum / validSamples) : 0;
 
                 // Преобразуем в dBFS и нормализуем, чтобы исключить отрицательные значения
                 let db = rms > 0 ? 20 * Math.log10(rms) : -100; // dBFS диапазон [-∞..0]
@@ -1033,8 +1023,12 @@
                     if (spectrumBuffer.length > SMOOTH_WINDOW) spectrumBuffer.shift();
                     currentSmoothed = medianSpectrum(spectrumBuffer);
                 }
-                // Рисуем спектр (сглаженный, если доступен)
-                drawFrequencyResponse(currentSmoothed || freqArray);
+                
+                // Применяем визуальный фильтр высоких частот перед отрисовкой
+                const visualData = applyVisualHighPassFilter(currentSmoothed || freqArray);
+                
+                // Рисуем спектр (сглаженный и отфильтрованный)
+                drawFrequencyResponse(visualData);
 
                 rafId = requestAnimationFrame(updateLevel);
             };
@@ -1257,6 +1251,43 @@
             }
             return out;
         }
+        
+        // Визуальный фильтр высоких частот для подавления низкочастотного шума на графике
+        function applyVisualHighPassFilter(spectrum) {
+            if (!spectrum || spectrum.length === 0) return spectrum;
+            
+            const filtered = new Uint8Array(spectrum.length);
+            const nyquist = sampleRate / 2;
+            const bins = spectrum.length;
+            
+            // Параметры плавного фильтра
+            const cutoffFreq = 300;      // начало подавления
+            const transitionWidth = 200; // плавность перехода (200 Гц)
+            
+            for (let i = 0; i < bins; i++) {
+                const freq = (i / bins) * nyquist;
+                
+                // Вычисляем коэффициент ослабления (0 = полное подавление, 1 = без изменений)
+                let attenuation = 1.0;
+                
+                if (freq < cutoffFreq) {
+                    // Ниже 300 Гц - сильное подавление
+                    // Используем косинусную функцию для плавного перехода
+                    const ratio = freq / cutoffFreq;
+                    attenuation = ratio * ratio; // квадратичное ослабление для более агрессивного подавления низов
+                } else if (freq < cutoffFreq + transitionWidth) {
+                    // Переходная зона 300-500 Гц - плавное восстановление
+                    const ratio = (freq - cutoffFreq) / transitionWidth;
+                    attenuation = 0.5 * (1 - Math.cos(Math.PI * ratio)); // косинусная интерполяция
+                }
+                // Выше 500 Гц - без изменений (attenuation = 1.0)
+                
+                // Применяем ослабление
+                filtered[i] = Math.round(spectrum[i] * attenuation);
+            }
+            
+            return filtered;
+        }
 
         // Дополнительное сглаживание для плавных линий (адаптивное окно + двойной проход)
         function smoothSpectrum(spectrum, baseWindowSize = 12) {
@@ -1304,10 +1335,10 @@
             freqCtx.fillStyle = '#ffffff';
             freqCtx.fillRect(0, 0, width, height);
 
-            // Логарифмическая шкала частоты
+            // Логарифмическая шкала частоты (100-10000 Гц)
             const bins = freqArray.length;
-            const minF = 20;
-            const maxF = sampleRate / 2;
+            const minF = 100;
+            const maxF = 10000;
             const logMin = Math.log10(minF);
             const logMax = Math.log10(maxF);
 
@@ -1335,12 +1366,12 @@
             }
 
             // Рисуем вертикальную сетку (более тонко и нежно)
-            const ticks = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+            const ticks = [100, 200, 500, 1000, 2000, 5000, 10000];
             const tickPositions = [];
             freqCtx.strokeStyle = 'rgba(1,100,79,0.10)';
             freqCtx.lineWidth = 0.8;
             ticks.forEach(f => {
-                if (f > maxF) return;
+                if (f < minF || f > maxF) return;
                 const x = ((Math.log10(f) - logMin) / (logMax - logMin)) * width;
                 tickPositions.push({ x, f });
                 // вертикальная линия сетки
@@ -1350,175 +1381,115 @@
                 freqCtx.stroke();
             });
 
-            // Живая линия во время измерения - УЛУЧШЕННАЯ визуализация
-            // Используем то же сглаживание что и для финального результата
+            // Столбчатое представление АЧХ во время измерения
             if (isMeasuring && analyser && freqArray && freqArray.length === bins) {
-                // ВАЖНО: используем currentSmoothed - он уже содержит медианное сглаживание
                 const liveData = currentSmoothed || freqArray;
                 const isAfter = measurementPhase === 'after';
                 
-                // Более яркие и насыщенные градиенты
-                const gradientLive = freqCtx.createLinearGradient(0, 0, 0, height);
-                if (isAfter) {
-                    gradientLive.addColorStop(0, 'rgba(1,100,79,0.65)');      // Ярче!
-                    gradientLive.addColorStop(0.5, 'rgba(1,100,79,0.35)');
-                    gradientLive.addColorStop(1, 'rgba(1,100,79,0.02)');
-                } else {
-                    gradientLive.addColorStop(0, 'rgba(229,57,53,0.65)');     // Ярче!
-                    gradientLive.addColorStop(0.5, 'rgba(229,57,53,0.35)');
-                    gradientLive.addColorStop(1, 'rgba(229,57,53,0.02)');
-                }
+                // Параметры столбцов
+                const numBars = 80; // количество столбцов
+                const barWidth = width / numBars;
+                const barGap = 1; // зазор между столбцами
                 
-                // Рисуем заливку
-                freqCtx.beginPath();
-                freqCtx.moveTo(0, height - 20);
-                for (let c = 0; c < width; c++) {
-                    const t = c / (width - 1);
+                // Цвет столбцов
+                const barColor = isAfter ? 'rgba(1,100,79,0.8)' : 'rgba(229,57,53,0.8)';
+                const barColorLight = isAfter ? 'rgba(1,100,79,0.4)' : 'rgba(229,57,53,0.4)';
+                
+                freqCtx.fillStyle = barColor;
+                
+                for (let i = 0; i < numBars; i++) {
+                    const t = i / (numBars - 1);
                     const logF = logMin + t * (logMax - logMin);
                     const f = Math.pow(10, logF);
                     const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                    
                     let v = liveData[bin] / 255;
                     v = Math.pow(v, 0.85);
                     const hfGain = 0.85 + 0.3 * t;
                     let vDraw = Math.min(1, v * hfGain);
                     vDraw = Math.min(0.9, vDraw);
-                    const h = vDraw * (height - 30);
-                    const y = height - h - 20;
-                    freqCtx.lineTo(c, y);
+                    
+                    const barHeight = vDraw * (height - 30);
+                    const x = i * barWidth;
+                    const y = height - barHeight - 20;
+                    
+                    // Градиент для каждого столбца (светлее сверху)
+                    const gradient = freqCtx.createLinearGradient(0, y, 0, height - 20);
+                    gradient.addColorStop(0, barColor);
+                    gradient.addColorStop(1, barColorLight);
+                    freqCtx.fillStyle = gradient;
+                    
+                    // Рисуем столбец
+                    freqCtx.fillRect(x, y, barWidth - barGap, barHeight);
                 }
-                freqCtx.lineTo(width, height - 20);
-                freqCtx.closePath();
-                freqCtx.fillStyle = gradientLive;
-                freqCtx.fill();
-                
-                // Рисуем линию поверх - более толстая и яркая
-                freqCtx.lineWidth = 3.0;  // Было 2.5
-                freqCtx.strokeStyle = isAfter ? '#01644f' : '#e53935';
-                freqCtx.globalAlpha = 0.9;  // Было 0.7 - теперь ярче!
-                freqCtx.beginPath();
-                for (let c = 0; c < width; c++) {
-                    const t = c / (width - 1);
-                    const logF = logMin + t * (logMax - logMin);
-                    const f = Math.pow(10, logF);
-                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
-                    let v = liveData[bin] / 255;
-                    v = Math.pow(v, 0.85);
-                    const hfGain = 0.85 + 0.3 * t;
-                    let vDraw = Math.min(1, v * hfGain);
-                    vDraw = Math.min(0.9, vDraw);
-                    const h = vDraw * (height - 30);
-                    const y = height - h - 20;
-                    if (c === 0) freqCtx.moveTo(c, y); else freqCtx.lineTo(c, y);
-                }
-                freqCtx.stroke();
-                freqCtx.globalAlpha = 1.0;
             }
 
-            // Линия АЧХ ДО (красная горка с УЛУЧШЕННЫМ градиентом)
+            // Столбчатая АЧХ ДО (красные столбцы)
             if (beforeSmoothed && beforeSmoothed.length === bins) {
-                const gradientBefore = freqCtx.createLinearGradient(0, 0, 0, height);
-                gradientBefore.addColorStop(0, 'rgba(229,57,53,0.7)');        // Ярче!
-                gradientBefore.addColorStop(0.4, 'rgba(229,57,53,0.4)');
-                gradientBefore.addColorStop(0.7, 'rgba(229,57,53,0.15)');
-                gradientBefore.addColorStop(1, 'rgba(229,57,53,0.02)');
+                const numBars = 80;
+                const barWidth = width / numBars;
+                const barGap = 1;
                 
-                // Рисуем заливку
-                freqCtx.beginPath();
-                freqCtx.moveTo(0, height - 20);
-                for (let c = 0; c < width; c++) {
-                    const t = c / (width - 1);
+                const barColor = 'rgba(229,57,53,0.7)';
+                const barColorLight = 'rgba(229,57,53,0.3)';
+                
+                for (let i = 0; i < numBars; i++) {
+                    const t = i / (numBars - 1);
                     const logF = logMin + t * (logMax - logMin);
                     const f = Math.pow(10, logF);
                     const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                    
                     let v = beforeSmoothed[bin] / 255;
                     v = Math.pow(v, 0.85);
                     const hfGain = 0.85 + 0.3 * t;
                     let vDraw = Math.min(1, v * hfGain);
-                    // Ограничение на 90 дБ (0.9 от максимума)
                     vDraw = Math.min(0.9, vDraw);
-                    const h = vDraw * (height - 30);
-                    const y = height - h - 20;
-                    freqCtx.lineTo(c, y);
+                    
+                    const barHeight = vDraw * (height - 30);
+                    const x = i * barWidth;
+                    const y = height - barHeight - 20;
+                    
+                    const gradient = freqCtx.createLinearGradient(0, y, 0, height - 20);
+                    gradient.addColorStop(0, barColor);
+                    gradient.addColorStop(1, barColorLight);
+                    freqCtx.fillStyle = gradient;
+                    
+                    freqCtx.fillRect(x, y, barWidth - barGap, barHeight);
                 }
-                freqCtx.lineTo(width, height - 20);
-                freqCtx.closePath();
-                freqCtx.fillStyle = gradientBefore;
-                freqCtx.fill();
-                
-                // Линия поверх - более толстая и яркая
-                freqCtx.lineWidth = 3.0;  // Было 2.5
-                freqCtx.strokeStyle = '#e53935';
-                freqCtx.globalAlpha = 1.0;  // Полная яркость
-                freqCtx.beginPath();
-                for (let c = 0; c < width; c++) {
-                    const t = c / (width - 1);
-                    const logF = logMin + t * (logMax - logMin);
-                    const f = Math.pow(10, logF);
-                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
-                    let v = beforeSmoothed[bin] / 255;
-                    v = Math.pow(v, 0.85);
-                    const hfGain = 0.85 + 0.3 * t;
-                    let vDraw = Math.min(1, v * hfGain);
-                    // Ограничение на 90 дБ (0.9 от максимума)
-                    vDraw = Math.min(0.9, vDraw);
-                    const h = vDraw * (height - 30);
-                    const y = height - h - 20;
-                    if (c === 0) freqCtx.moveTo(c, y); else freqCtx.lineTo(c, y);
-                }
-                freqCtx.stroke();
             }
-            // Линия АЧХ ПОСЛЕ (зелёная горка с УЛУЧШЕННЫМ градиентом)
+            
+            // Столбчатая АЧХ ПОСЛЕ (зеленые столбцы)
             if (afterSmoothed && afterSmoothed.length === bins) {
-                const gradientAfter = freqCtx.createLinearGradient(0, 0, 0, height);
-                gradientAfter.addColorStop(0, 'rgba(1,100,79,0.7)');          // Ярче!
-                gradientAfter.addColorStop(0.4, 'rgba(1,100,79,0.4)');
-                gradientAfter.addColorStop(0.7, 'rgba(1,100,79,0.15)');
-                gradientAfter.addColorStop(1, 'rgba(1,100,79,0.02)');
+                const numBars = 80;
+                const barWidth = width / numBars;
+                const barGap = 1;
                 
-                // Рисуем заливку
-                freqCtx.beginPath();
-                freqCtx.moveTo(0, height - 20);
-                for (let c = 0; c < width; c++) {
-                    const t = c / (width - 1);
+                const barColor = 'rgba(1,100,79,0.7)';
+                const barColorLight = 'rgba(1,100,79,0.3)';
+                
+                for (let i = 0; i < numBars; i++) {
+                    const t = i / (numBars - 1);
                     const logF = logMin + t * (logMax - logMin);
                     const f = Math.pow(10, logF);
                     const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                    
                     let v = afterSmoothed[bin] / 255;
                     v = Math.pow(v, 0.85);
                     const hfGain = 0.85 + 0.3 * t;
                     let vDraw = Math.min(1, v * hfGain);
-                    // Ограничение на 90 дБ (0.9 от максимума)
                     vDraw = Math.min(0.9, vDraw);
-                    const h = vDraw * (height - 30);
-                    const y = height - h - 20;
-                    freqCtx.lineTo(c, y);
+                    
+                    const barHeight = vDraw * (height - 30);
+                    const x = i * barWidth;
+                    const y = height - barHeight - 20;
+                    
+                    const gradient = freqCtx.createLinearGradient(0, y, 0, height - 20);
+                    gradient.addColorStop(0, barColor);
+                    gradient.addColorStop(1, barColorLight);
+                    freqCtx.fillStyle = gradient;
+                    
+                    freqCtx.fillRect(x, y, barWidth - barGap, barHeight);
                 }
-                freqCtx.lineTo(width, height - 20);
-                freqCtx.closePath();
-                freqCtx.fillStyle = gradientAfter;
-                freqCtx.fill();
-                
-                // Линия поверх - более толстая и яркая
-                freqCtx.lineWidth = 3.0;  // Было 2.5
-                freqCtx.strokeStyle = '#01644f';
-                freqCtx.globalAlpha = 1.0;  // Полная яркость
-                freqCtx.beginPath();
-                for (let c = 0; c < width; c++) {
-                    const t = c / (width - 1);
-                    const logF = logMin + t * (logMax - logMin);
-                    const f = Math.pow(10, logF);
-                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
-                    let v = afterSmoothed[bin] / 255;
-                    v = Math.pow(v, 0.85);
-                    const hfGain = 0.85 + 0.3 * t;
-                    let vDraw = Math.min(1, v * hfGain);
-                    // Ограничение на 90 дБ (0.9 от максимума)
-                    vDraw = Math.min(0.9, vDraw);
-                    const h = vDraw * (height - 30);
-                    const y = height - h - 20;
-                    if (c === 0) freqCtx.moveTo(c, y); else freqCtx.lineTo(c, y);
-                }
-                freqCtx.stroke();
             }
 
             // Теперь наносим риски и подписи поверх графиков
@@ -1534,7 +1505,7 @@
                 freqCtx.stroke();
                 // подпись
                 const f = tp.f;
-                const label = f >= 1000 ? `${(f/1000).toFixed(f===1000||f===2000||f===5000||f===10000||f===20000?0:1)}k` : `${f}`;
+                const label = f >= 1000 ? `${(f/1000).toFixed(f===1000||f===2000||f===5000||f===10000?0:1)}k` : `${f}`;
                 const textW = freqCtx.measureText(label).width;
                 const textX = Math.min(Math.max(0, x - textW / 2), width - textW);
                 freqCtx.fillText(label, textX, height - 10);
