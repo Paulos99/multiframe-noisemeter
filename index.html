@@ -1437,7 +1437,7 @@
             return aWeighted;
         }
 
-        // ====== 1/3-октавные полосы и LAeq ======
+        // ====== 1/3-октавные полосы и правильный расчет LAeq ======
         function getThirdOctaveCenters() {
             // Стандартные центры 1/3 октавы в пределах 100-10000 Гц
             return [
@@ -1461,14 +1461,15 @@
 
             // Энергия по полосам (в линейной шкале мощности)
             const bandPowers = new Array(centers.length).fill(0);
+            let totalValidBins = 0;
 
             for (let i = 0; i < bins; i++) {
                 const freq = (i / bins) * nyquist;
                 if (freq < 100 || freq > 10000) continue;
 
-                // dB из AnalyserNode (dBFS), добавляем калибровку и A-weighting
+                // dB из AnalyserNode (dBFS)
                 let dB = floatDbArray[i];
-                if (!isFinite(dB)) continue;
+                if (!isFinite(dB) || dB < -100) continue;
 
                 // Частотная калибровка микрофона
                 const micOffset = getFrequencyOffset(freq) || 0;
@@ -1485,17 +1486,25 @@
                     const e = edges[b];
                     if (freq >= e.low && freq < e.high) {
                         bandPowers[b] += power;
+                        totalValidBins++;
                         break;
                     }
                 }
             }
 
-            // Итоговый уровень: сумма мощностей по полосам
-            let totalPower = 0;
-            for (let b = 0; b < bandPowers.length; b++) totalPower += bandPowers[b];
+            // Если нет валидных бинов - возвращаем минимальное значение
+            if (totalValidBins === 0) return 0.0000001; // -100 dB
 
-            // Возвращаем мощность кадра (в линейной шкале), усреднение по времени снаружи
-            return totalPower;
+            // Суммируем энергию по всем полосам
+            let totalPower = 0;
+            for (let b = 0; b < bandPowers.length; b++) {
+                totalPower += bandPowers[b];
+            }
+
+            // Нормализуем на количество бинов в полосах
+            const avgPower = totalPower / totalValidBins;
+
+            return avgPower;
         }
 
         // Функции для работы с чистым белым шумом
@@ -1736,20 +1745,22 @@
 
             const updateLevel = () => {
                 analyser.getByteTimeDomainData(dataArray);
-                // Берем плавающий спектр в дБ из AnalyserNode
+                analyser.getByteFrequencyData(freqArray); // Для визуализации
+                
+                // Берем плавающий спектр в дБ из AnalyserNode для расчетов
                 const floatDbArray = new Float32Array(bufferLength);
                 analyser.getFloatFrequencyData(floatDbArray);
 
-                // Интеграция по 1/3-октавам с A-взвешиванием
+                // Интеграция по 1/3-октавам с A-взвешиванием и накопление для LAeq
                 const framePower = computeLAeqFrameFromFloatDb(floatDbArray, sampleRate);
-                
-                // Накопление по кадрам для LAeq
-                sumRms2 += framePower; // накапливаем мощность
+
+                // Накопление мощности для LAeq (энергетическое усреднение)
+                sumRms2 += framePower;
                 countFrames += 1;
                 const meanPower = sumRms2 / Math.max(1, countFrames);
-                
+
                 // Перевод в дБ
-                const avgDisplayed = meanPower > 0 ? 10 * Math.log10(meanPower) : 0;
+                const avgDisplayed = meanPower > 0 ? 10 * Math.log10(meanPower) + 100 : 0;
 
                 // Энергетическое усреднение и вывод в соответствующую строку (ДО/ПОСЛЕ)
                 if (isMeasuring) {
@@ -1780,7 +1791,7 @@
                 if (measurementPhase === 'after') {
                     const beforeVal = (avgBeforeVal !== null && !isNaN(avgBeforeVal)) ? avgBeforeVal : null;
                     const currentMeanPower = sumRms2 / Math.max(1, countFrames);
-                    const currentAvgDisplay = currentMeanPower > 0 ? 10 * Math.log10(currentMeanPower) : 0;
+                    const currentAvgDisplay = currentMeanPower > 0 ? 10 * Math.log10(currentMeanPower) + 100 : 0;
                     if (beforeVal !== null) {
                         const diffDb = currentAvgDisplay - beforeVal;
                         // Конверсия дБ в мощностное отношение: P2/P1 = 10^(ΔdB/10)
@@ -1846,7 +1857,7 @@
             // Итог среднего (LAeq по 1/3-октавам)
             if (wasMeasuring) {
                 const meanPower = countFrames > 0 ? (sumRms2 / countFrames) : 0;
-                const avg = meanPower > 0 ? 10 * Math.log10(meanPower) : 0;
+                const avg = meanPower > 0 ? 10 * Math.log10(meanPower) + 100 : 0;
                 const durationSec = Math.floor((Date.now() - startTimeMs) / 1000);
                 if (avg !== null) {
                     // Фиксируем по фазам и показываем крупно соответствующим цветом
