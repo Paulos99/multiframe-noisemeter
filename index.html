@@ -886,7 +886,7 @@
             <!-- ЧАСТОТНАЯ КАЛИБРОВКА -->
             <div style="margin-bottom: 15px;">
                 <h3 style="font-size: 16px; margin: 0 0 10px 0; color: var(--accent);">2. Частотная коррекция (тоны)</h3>
-                <p style="font-size: 12px; margin: 0 0 12px 0; color: #667d81;">Приложение издает тон на каждой частоте. Введите показания профессионального прибора для коррекции.</p>
+                <p style="font-size: 12px; margin: 0 0 12px 0; color: #667d81;"><strong>Нажмите на частоту</strong> (например, "125 Гц"), чтобы начать воспроизведение тона. Введите показания профессионального прибора для коррекции.</p>
             </div>
             
             <div id="calibrationFrequencyList" style="margin: 0;">
@@ -1099,10 +1099,7 @@
                 calibrationFrequencyList.appendChild(item);
             });
             
-            // Автоматически запускаем первую частоту
-            if (CALIBRATION_FREQUENCIES.length > 0) {
-                startFrequencyCalibration(CALIBRATION_FREQUENCIES[0]);
-            }
+            // НЕ запускаем автоматически тон при открытии - пользователь сначала должен откалибровать белый шум
         }
         
         // Автоматический запуск калибровки частоты
@@ -1144,7 +1141,7 @@
             toneOscillator.type = 'sine';
             
             toneGainNode = noiseContext.createGain();
-            toneGainNode.gain.value = 0.5; // Средняя громкость
+            toneGainNode.gain.value = 0.65; // 65% громкости
             
             toneOscillator.connect(toneGainNode);
             toneGainNode.connect(noiseContext.destination);
@@ -1838,7 +1835,7 @@
                     // Плавное зажигание за 2 секунды
                     const currentTime = noiseContext.currentTime;
                     noiseGain.gain.setValueAtTime(0, currentTime); // начинаем с 0
-                    noiseGain.gain.linearRampToValueAtTime(1.0, currentTime + 2.0); // доходим до максимума за 2 сек
+                    noiseGain.gain.linearRampToValueAtTime(0.65, currentTime + 2.0); // доходим до 65% за 2 сек
                 } catch(e) {
                     console.error('Ошибка запуска белого шума:', e);
                     isNoisePlaying = false;
