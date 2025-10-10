@@ -1438,6 +1438,10 @@
         }
 
         // ====== 1/3-октавные полосы и правильный расчет LAeq ======
+        
+        // Глобальный калибровочный оффсет для приведения к SpectraPLUS
+        const GLOBAL_CALIBRATION_OFFSET = 37.0; // дБ
+        
         function getThirdOctaveCenters() {
             // Стандартные центры 1/3 октавы в пределах 100-10000 Гц
             return [
@@ -1478,8 +1482,8 @@
                 // A-взвешивание
                 dB += getAWeighting(freq);
 
-                // Перевод в линейную мощность
-                const power = Math.pow(10, dB / 10);
+                // Перевод в линейную мощность с глобальной калибровкой
+                const power = Math.pow(10, (dB + GLOBAL_CALIBRATION_OFFSET) / 10);
 
                 // Находим полосу
                 for (let b = 0; b < centers.length; b++) {
@@ -1759,7 +1763,7 @@
                 countFrames += 1;
                 const meanPower = sumRms2 / Math.max(1, countFrames);
 
-                // Перевод в дБ
+                // Перевод в дБ (калибровка уже применена к мощности)
                 const avgDisplayed = meanPower > 0 ? 10 * Math.log10(meanPower) + 100 : 0;
 
                 // Энергетическое усреднение и вывод в соответствующую строку (ДО/ПОСЛЕ)
