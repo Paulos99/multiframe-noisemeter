@@ -699,7 +699,7 @@
         /* Стили для списка частот калибровки - компактная версия */
         .frequency-item {
             display: grid;
-            grid-template-columns: 70px 90px 90px 1fr;
+            grid-template-columns: 70px 90px 120px 80px 1fr;
             gap: 8px;
             align-items: center;
             padding: 8px 10px;
@@ -762,6 +762,27 @@
         .frequency-reference input:focus {
             outline: none;
             border-color: var(--accent);
+        }
+        
+        .frequency-apply-btn {
+            padding: 6px 12px;
+            font-size: 13px;
+            background-color: var(--accent);
+            color: #ffffff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        
+        .frequency-apply-btn:hover {
+            background-color: var(--accent-dark);
+        }
+        
+        .frequency-apply-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
         }
         
         .frequency-offset {
@@ -1001,8 +1022,10 @@
                         <input type="number" id="reference-${freq}" 
                                placeholder="94" 
                                step="0.1" 
-                               value="${calibData ? calibData.reference.toFixed(1) : ''}"
-                               onchange="applyCalibration(${freq})">
+                               value="${calibData ? calibData.reference.toFixed(1) : ''}">
+                    </div>
+                    <div>
+                        <button class="frequency-apply-btn" id="apply-btn-${freq}" onclick="applyCalibration(${freq})">Применить</button>
                     </div>
                     <div class="frequency-offset" id="offset-${freq}">
                         ${calibData ? `<strong>${calibData.offset >= 0 ? '+' : ''}${calibData.offset.toFixed(1)} dB</strong>` : ''}
@@ -1176,9 +1199,10 @@
             const measuredEl = document.getElementById(`measured-value-${freq}`);
             const referenceInput = document.getElementById(`reference-${freq}`);
             const offsetEl = document.getElementById(`offset-${freq}`);
+            const applyBtn = document.getElementById(`apply-btn-${freq}`);
             
             const measuredText = measuredEl.textContent;
-            if (measuredText === '--') {
+            if (measuredText === '--' || measuredText === '') {
                 alert('Дождитесь измерения текущей частоты');
                 return;
             }
@@ -1188,6 +1212,7 @@
             
             if (isNaN(referenceValue) || referenceValue < 60 || referenceValue > 120) {
                 alert('Введите корректное значение от 60 до 120 дБ');
+                referenceInput.focus();
                 return;
             }
             
@@ -1204,6 +1229,8 @@
             
             // Обновляем UI
             offsetEl.innerHTML = `<strong>${offset >= 0 ? '+' : ''}${offset.toFixed(1)} dB</strong>`;
+            applyBtn.textContent = '✓ Готово';
+            applyBtn.disabled = true;
             
             const item = document.getElementById(`freq-item-${freq}`);
             item.classList.add('completed');
@@ -1213,6 +1240,11 @@
             if (currentIndex < CALIBRATION_FREQUENCIES.length - 1) {
                 setTimeout(() => {
                     startFrequencyCalibration(CALIBRATION_FREQUENCIES[currentIndex + 1]);
+                }, 800);
+            } else {
+                // Все частоты откалиброваны - показываем сообщение
+                setTimeout(() => {
+                    alert('Калибровка завершена! Все частоты откалиброваны.\n\nМожете закрыть окно калибровки.');
                 }, 500);
             }
         }
