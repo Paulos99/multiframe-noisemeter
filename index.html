@@ -873,10 +873,10 @@
         </div>
         <div class="bottom-area">
             <div class="measurements-column">
-                <div id="avgBefore">До: -- dB</div>
-                <div id="avgAfter">После: -- dB</div>
-                <div id="diff">Разница: -- dB</div>
-                <div id="avg" style="display:none">Среднее: -- dB</div>
+                <div id="avgBefore">До: -- dB(A)</div>
+                <div id="avgAfter">После: -- dB(A)</div>
+                <div id="diff">Разница: -- dB(A)</div>
+                <div id="avg" style="display:none">Среднее: -- dB(A)</div>
             </div>
             <div class="controls-panel">
                 <div id="duration">10 секунд</div>
@@ -1364,7 +1364,28 @@
             return lowerOffset + t * (upperOffset - lowerOffset);
         }
         
-        // Применение частотной коррекции к спектру
+        // A-weighting коррекция по стандарту IEC 61672-1
+        function getAWeighting(freq) {
+            if (freq <= 0) return -100;
+            
+            // Формула A-weighting
+            const f2 = freq * freq;
+            const c1 = 20.6 * 20.6;
+            const c2 = 107.7 * 107.7;
+            const c3 = 737.9 * 737.9;
+            const c4 = 12194.0 * 12194.0;
+            
+            const numerator = c4 * f2 * f2;
+            const denominator = (f2 + c1) * Math.sqrt((f2 + c2) * (f2 + c3)) * (f2 + c4);
+            
+            if (denominator === 0) return -100;
+            
+            const aWeight = 20 * Math.log10(numerator / denominator) + 2.0; // +2.0 для нормализации на 1kHz = 0 dB
+            
+            return aWeight;
+        }
+        
+        // Применение частотной коррекции к спектру (калибровка микрофона)
         function applyFrequencyCorrection(freqArray, sampleRate) {
             if (Object.keys(frequencyCalibration).length === 0) {
                 return freqArray; // Нет калибровки - возвращаем как есть
@@ -1390,6 +1411,30 @@
             }
             
             return corrected;
+        }
+        
+        // Применение A-weighting к спектру
+        function applyAWeighting(freqArray, sampleRate) {
+            const aWeighted = new Float32Array(freqArray.length);
+            const nyquist = sampleRate / 2;
+            
+            for (let i = 0; i < freqArray.length; i++) {
+                const freq = (i / freqArray.length) * nyquist;
+                const aWeight = getAWeighting(freq);
+                
+                // Применяем A-weighting в dB
+                const normalized = freqArray[i];
+                if (normalized > 0) {
+                    const dB = 20 * Math.log10(normalized);
+                    const aWeightedDB = dB + aWeight;
+                    const aWeightedNormalized = Math.pow(10, aWeightedDB / 20);
+                    aWeighted[i] = Math.max(0, aWeightedNormalized);
+                } else {
+                    aWeighted[i] = 0;
+                }
+            }
+            
+            return aWeighted;
         }
 
         // Функции для работы с чистым белым шумом
@@ -1543,9 +1588,9 @@
                     afterSmoothed = null;
                     avgBeforeVal = null;
                     avgAfterVal = null;
-                    avgBeforeEl.textContent = 'До: -- dB';
-                    avgAfterEl.textContent = 'После: -- dB';
-                    diffElement.textContent = 'Разница: -- dB';
+                    avgBeforeEl.textContent = 'До: -- dB(A)';
+                    avgAfterEl.textContent = 'После: -- dB(A)';
+                    diffElement.textContent = 'Разница: -- dB(A)';
                     try {
                         const rect = freqCanvas.getBoundingClientRect();
                         freqCtx.fillStyle = '#ffffff';
@@ -1632,11 +1677,13 @@
                 analyser.getByteTimeDomainData(dataArray);
                 analyser.getByteFrequencyData(freqArray);
 
-                // Применяем частотную коррекцию к спектру
+                // Применяем частотную коррекцию к спектру (калибровка микрофона)
                 const correctedSpectrum = applyFrequencyCorrection(freqArray, sampleRate);
+                
+                // Применяем A-weighting (кривая чувствительности человеческого уха)
+                const aWeightedSpectrum = applyAWeighting(correctedSpectrum, sampleRate);
 
-                // Вычисляем RMS из частотного спектра в диапазоне 400-10000 Гц
-                // чтобы исключить низкочастотный шум
+                // Вычисляем RMS из A-взвешенного спектра в диапазоне 400-10000 Гц
                 const nyquist = sampleRate / 2;
                 const minFreq = 400;  // минимальная частота для расчета
                 const maxFreq = 10000; // максимальная частота для расчета
@@ -1649,8 +1696,8 @@
                     
                     // Учитываем только частоты в диапазоне 400-10000 Гц
                     if (freq >= minFreq && freq <= maxFreq) {
-                        // Используем скорректированный спектр
-                        const amplitude = correctedSpectrum[i];
+                        // Используем A-взвешенный спектр
+                        const amplitude = aWeightedSpectrum[i];
                         sum += amplitude * amplitude;
                         validSamples++;
                     }
@@ -1670,8 +1717,8 @@
                     const meanRms2 = sumRms2 / Math.max(1, countFrames);
                     const avgDbFs = meanRms2 > 0 ? 10 * Math.log10(meanRms2) : -100;
                     const avgDisplayed = Math.min(120, Math.max(0, avgDbFs + 100)); // Коррекция уже применена к спектру
-                    if (measurementPhase === 'before') avgBeforeEl.textContent = `До: ${avgDisplayed.toFixed(1)} dB`;
-                    else avgAfterEl.textContent = `После: ${avgDisplayed.toFixed(1)} dB`;
+                    if (measurementPhase === 'before') avgBeforeEl.textContent = `До: ${avgDisplayed.toFixed(1)} dB(A)`;
+                    else avgAfterEl.textContent = `После: ${avgDisplayed.toFixed(1)} dB(A)`;
                     const elapsed = Math.floor((Date.now() - startTimeMs) / 1000);
                     const remaining = Math.max(0, measurementLimitSec - elapsed);
                     const prevRemaining = durationElement.getAttribute('data-prev');
@@ -1770,16 +1817,16 @@
                     // Фиксируем по фазам и показываем крупно соответствующим цветом
                     if (measurementPhase === 'before') {
                         avgBeforeVal = Number(avg.toFixed(1));
-                        avgBeforeEl.textContent = `До: ${avgBeforeVal.toFixed(1)} dB`;
+                        avgBeforeEl.textContent = `До: ${avgBeforeVal.toFixed(1)} dB(A)`;
                     } else {
                         avgAfterVal = Number(avg.toFixed(1));
-                        avgAfterEl.textContent = `После: ${avgAfterVal.toFixed(1)} dB`;
+                        avgAfterEl.textContent = `После: ${avgAfterVal.toFixed(1)} dB(A)`;
                         if (avgBeforeVal !== null) {
                             const diffDb = avgAfterVal - avgBeforeVal;
                             const powerRatio = Math.pow(10, diffDb / 10);
                             const percent = (powerRatio - 1) * 100;
                             const sign = percent >= 0 ? '+' : '';
-                            diffElement.textContent = `Разница: ${diffDb.toFixed(1)} dB (${sign}${percent.toFixed(0)}%)`;
+                            diffElement.textContent = `Разница: ${diffDb.toFixed(1)} dB(A) (${sign}${percent.toFixed(0)}%)`;
                         }
                     }
                 }
@@ -1837,9 +1884,9 @@
             endTimeMs = 0;
             measurementPhase = 'before';
             // Сброс UI
-            avgBeforeEl.textContent = 'До: -- dB';
-            avgAfterEl.textContent = 'После: -- dB';
-            diffElement.textContent = 'Разница: -- dB';
+            avgBeforeEl.textContent = 'До: -- dB(A)';
+            avgAfterEl.textContent = 'После: -- dB(A)';
+            diffElement.textContent = 'Разница: -- dB(A)';
             durationElement.textContent = `${measurementLimitSec} секунд`;
             toggleBtn.textContent = 'Старт';
             toggleBtn.classList.remove('stop');
