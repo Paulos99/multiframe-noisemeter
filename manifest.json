@@ -1,7 +1,7 @@
 {
-  "name": "MultiFRAME Шумомер",
-  "short_name": "Шумомер",
-  "description": "Измерение уровня шума с визуализацией АЧХ",
+  "name": "MultiFRAME",
+  "short_name": "MultiFRAME",
+  "description": "Измерение уровня шума АЧХ",
   "start_url": "./index.html",
   "scope": "./",
   "display": "fullscreen",
