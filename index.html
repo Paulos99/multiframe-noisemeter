@@ -873,10 +873,10 @@
         </div>
         <div class="bottom-area">
             <div class="measurements-column">
-                <div id="avgBefore">До: -- dB(A)</div>
-                <div id="avgAfter">После: -- dB(A)</div>
-                <div id="diff">Разница: -- dB(A)</div>
-                <div id="avg" style="display:none">Среднее: -- dB(A)</div>
+                <div id="avgBefore">До: -- dB</div>
+                <div id="avgAfter">После: -- dB</div>
+                <div id="diff">Разница: -- dB</div>
+                <div id="avg" style="display:none">Среднее: -- dB</div>
             </div>
             <div class="controls-panel">
                 <div id="duration">10 секунд</div>
@@ -1437,6 +1437,67 @@
             return aWeighted;
         }
 
+        // ====== 1/3-октавные полосы и LAeq ======
+        function getThirdOctaveCenters() {
+            // Стандартные центры 1/3 октавы в пределах 100-10000 Гц
+            return [
+                100, 125, 160, 200, 250, 315, 400, 500,
+                630, 800, 1000, 1250, 1600, 2000, 2500,
+                3150, 4000, 5000, 6300, 8000, 10000
+            ];
+        }
+
+        function getBandEdges(centers) {
+            // Границы полос: center * 2^(±1/6)
+            const factor = Math.pow(2, 1/6);
+            return centers.map(c => ({ low: c / factor, high: c * factor }));
+        }
+
+        function computeLAeqFrameFromFloatDb(floatDbArray, sampleRate) {
+            const nyquist = sampleRate / 2;
+            const bins = floatDbArray.length;
+            const centers = getThirdOctaveCenters();
+            const edges = getBandEdges(centers);
+
+            // Энергия по полосам (в линейной шкале мощности)
+            const bandPowers = new Array(centers.length).fill(0);
+
+            for (let i = 0; i < bins; i++) {
+                const freq = (i / bins) * nyquist;
+                if (freq < 100 || freq > 10000) continue;
+
+                // dB из AnalyserNode (dBFS), добавляем калибровку и A-weighting
+                let dB = floatDbArray[i];
+                if (!isFinite(dB)) continue;
+
+                // Частотная калибровка микрофона
+                const micOffset = getFrequencyOffset(freq) || 0;
+                dB += micOffset;
+
+                // A-взвешивание
+                dB += getAWeighting(freq);
+
+                // Перевод в линейную мощность
+                const power = Math.pow(10, dB / 10);
+
+                // Находим полосу
+                for (let b = 0; b < centers.length; b++) {
+                    const e = edges[b];
+                    if (freq >= e.low && freq < e.high) {
+                        bandPowers[b] += power;
+                        break;
+                    }
+                }
+            }
+
+            // Итоговый уровень: сумма мощностей по полосам
+            let totalPower = 0;
+            for (let b = 0; b < bandPowers.length; b++) totalPower += bandPowers[b];
+
+            // Возвращаем мощность кадра (в линейной шкале), усреднение по времени снаружи
+            return totalPower;
+        }
+
         // Функции для работы с чистым белым шумом
         function createWhiteNoise() {
             // Создаем AudioContext только один раз
@@ -1588,9 +1649,9 @@
                     afterSmoothed = null;
                     avgBeforeVal = null;
                     avgAfterVal = null;
-                    avgBeforeEl.textContent = 'До: -- dB(A)';
-                    avgAfterEl.textContent = 'После: -- dB(A)';
-                    diffElement.textContent = 'Разница: -- dB(A)';
+                    avgBeforeEl.textContent = 'До: -- dB';
+                    avgAfterEl.textContent = 'После: -- dB';
+                    diffElement.textContent = 'Разница: -- dB';
                     try {
                         const rect = freqCanvas.getBoundingClientRect();
                         freqCtx.fillStyle = '#ffffff';
@@ -1675,50 +1736,26 @@
 
             const updateLevel = () => {
                 analyser.getByteTimeDomainData(dataArray);
-                analyser.getByteFrequencyData(freqArray);
+                // Берем плавающий спектр в дБ из AnalyserNode
+                const floatDbArray = new Float32Array(bufferLength);
+                analyser.getFloatFrequencyData(floatDbArray);
 
-                // Применяем частотную коррекцию к спектру (калибровка микрофона)
-                const correctedSpectrum = applyFrequencyCorrection(freqArray, sampleRate);
+                // Интеграция по 1/3-октавам с A-взвешиванием
+                const framePower = computeLAeqFrameFromFloatDb(floatDbArray, sampleRate);
                 
-                // Применяем A-weighting (кривая чувствительности человеческого уха)
-                const aWeightedSpectrum = applyAWeighting(correctedSpectrum, sampleRate);
-
-                // Вычисляем RMS из A-взвешенного спектра в диапазоне 400-10000 Гц
-                const nyquist = sampleRate / 2;
-                const minFreq = 400;  // минимальная частота для расчета
-                const maxFreq = 10000; // максимальная частота для расчета
+                // Накопление по кадрам для LAeq
+                sumRms2 += framePower; // накапливаем мощность
+                countFrames += 1;
+                const meanPower = sumRms2 / Math.max(1, countFrames);
                 
-                let sum = 0;
-                let validSamples = 0;
-                
-                for (let i = 0; i < bufferLength; i++) {
-                    const freq = (i / bufferLength) * nyquist;
-                    
-                    // Учитываем только частоты в диапазоне 400-10000 Гц
-                    if (freq >= minFreq && freq <= maxFreq) {
-                        // Используем A-взвешенный спектр
-                        const amplitude = aWeightedSpectrum[i];
-                        sum += amplitude * amplitude;
-                        validSamples++;
-                    }
-                }
-                
-                const rms = validSamples > 0 ? Math.sqrt(sum / validSamples) : 0;
-
-                // Преобразуем в dBFS и нормализуем, чтобы исключить отрицательные значения
-                let db = rms > 0 ? 20 * Math.log10(rms) : -100; // dBFS диапазон [-∞..0]
-                db = Math.max(db, -100);
-                const displayedDb = Math.min(120, Math.max(0, db + 100)); // 0..120 условных дБ
+                // Перевод в дБ
+                const avgDisplayed = meanPower > 0 ? 10 * Math.log10(meanPower) : 0;
 
                 // Энергетическое усреднение и вывод в соответствующую строку (ДО/ПОСЛЕ)
                 if (isMeasuring) {
-                    sumRms2 += rms * rms;
-                    countFrames += 1;
-                    const meanRms2 = sumRms2 / Math.max(1, countFrames);
-                    const avgDbFs = meanRms2 > 0 ? 10 * Math.log10(meanRms2) : -100;
-                    const avgDisplayed = Math.min(120, Math.max(0, avgDbFs + 100)); // Коррекция уже применена к спектру
-                    if (measurementPhase === 'before') avgBeforeEl.textContent = `До: ${avgDisplayed.toFixed(1)} dB(A)`;
-                    else avgAfterEl.textContent = `После: ${avgDisplayed.toFixed(1)} dB(A)`;
+                    // avgDisplayed уже вычислен как LAeq по 1/3-октавам
+                    if (measurementPhase === 'before') avgBeforeEl.textContent = `До: ${avgDisplayed.toFixed(1)} dB`;
+                    else avgAfterEl.textContent = `После: ${avgDisplayed.toFixed(1)} dB`;
                     const elapsed = Math.floor((Date.now() - startTimeMs) / 1000);
                     const remaining = Math.max(0, measurementLimitSec - elapsed);
                     const prevRemaining = durationElement.getAttribute('data-prev');
@@ -1742,9 +1779,8 @@
                 // Обновляем разницу (ПОСЛЕ - ДО) при второй фазе
                 if (measurementPhase === 'after') {
                     const beforeVal = (avgBeforeVal !== null && !isNaN(avgBeforeVal)) ? avgBeforeVal : null;
-                    const currentMeanRms2 = (sumRms2 + rms * rms) / Math.max(1, countFrames + 1);
-                    const currentAvgDbFs = currentMeanRms2 > 0 ? 10 * Math.log10(currentMeanRms2) : -100;
-                    const currentAvgDisplay = Math.min(120, Math.max(0, currentAvgDbFs + 100)); // Коррекция уже применена к спектру
+                    const currentMeanPower = sumRms2 / Math.max(1, countFrames);
+                    const currentAvgDisplay = currentMeanPower > 0 ? 10 * Math.log10(currentMeanPower) : 0;
                     if (beforeVal !== null) {
                         const diffDb = currentAvgDisplay - beforeVal;
                         // Конверсия дБ в мощностное отношение: P2/P1 = 10^(ΔdB/10)
@@ -1807,26 +1843,25 @@
             const wasMeasuring = isMeasuring;
             isMeasuring = false;
 
-            // Итог среднего (энергетическое усреднение)
+            // Итог среднего (LAeq по 1/3-октавам)
             if (wasMeasuring) {
-                const meanRms2 = countFrames > 0 ? (sumRms2 / countFrames) : 0;
-                const avgDbFs = meanRms2 > 0 ? 10 * Math.log10(meanRms2) : -100;
-                const avg = avgDbFs + 100; // Коррекция уже применена к спектру
+                const meanPower = countFrames > 0 ? (sumRms2 / countFrames) : 0;
+                const avg = meanPower > 0 ? 10 * Math.log10(meanPower) : 0;
                 const durationSec = Math.floor((Date.now() - startTimeMs) / 1000);
                 if (avg !== null) {
                     // Фиксируем по фазам и показываем крупно соответствующим цветом
                     if (measurementPhase === 'before') {
                         avgBeforeVal = Number(avg.toFixed(1));
-                        avgBeforeEl.textContent = `До: ${avgBeforeVal.toFixed(1)} dB(A)`;
+                        avgBeforeEl.textContent = `До: ${avgBeforeVal.toFixed(1)} dB`;
                     } else {
                         avgAfterVal = Number(avg.toFixed(1));
-                        avgAfterEl.textContent = `После: ${avgAfterVal.toFixed(1)} dB(A)`;
+                        avgAfterEl.textContent = `После: ${avgAfterVal.toFixed(1)} dB`;
                         if (avgBeforeVal !== null) {
                             const diffDb = avgAfterVal - avgBeforeVal;
                             const powerRatio = Math.pow(10, diffDb / 10);
                             const percent = (powerRatio - 1) * 100;
                             const sign = percent >= 0 ? '+' : '';
-                            diffElement.textContent = `Разница: ${diffDb.toFixed(1)} dB(A) (${sign}${percent.toFixed(0)}%)`;
+                            diffElement.textContent = `Разница: ${diffDb.toFixed(1)} dB (${sign}${percent.toFixed(0)}%)`;
                         }
                     }
                 }
@@ -1884,9 +1919,9 @@
             endTimeMs = 0;
             measurementPhase = 'before';
             // Сброс UI
-            avgBeforeEl.textContent = 'До: -- dB(A)';
-            avgAfterEl.textContent = 'После: -- dB(A)';
-            diffElement.textContent = 'Разница: -- dB(A)';
+            avgBeforeEl.textContent = 'До: -- dB';
+            avgAfterEl.textContent = 'После: -- dB';
+            diffElement.textContent = 'Разница: -- dB';
             durationElement.textContent = `${measurementLimitSec} секунд`;
             toggleBtn.textContent = 'Старт';
             toggleBtn.classList.remove('stop');
