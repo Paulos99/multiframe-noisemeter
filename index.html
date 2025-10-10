@@ -1437,10 +1437,20 @@
             return aWeighted;
         }
 
-        // ====== 1/3-октавные полосы и правильный расчет LAeq ======
+        // ====== 1/3-октавные полосы и адаптивная калибровка ======
         
-        // Глобальный калибровочный оффсет для приведения к SpectraPLUS
-        const GLOBAL_CALIBRATION_OFFSET = 37.0; // дБ
+        // Базовый калибровочный оффсет для приведения к SpectraPLUS
+        const BASE_CALIBRATION_OFFSET = 8.5; // дБ (средняя разница по всем частотам)
+        
+        // Калибровка при запуске
+        let startupCalibrationLevel = null; // Эталонный уровень при запуске
+        let isStartupCalibrating = false; // Флаг калибровки при запуске
+        let startupCalibrationAudioContext = null;
+        let startupCalibrationAnalyser = null;
+        let startupCalibrationMicrophone = null;
+        let startupCalibrationRafId = null;
+        let startupToneOscillator = null;
+        let startupToneGainNode = null;
         
         function getThirdOctaveCenters() {
             // Стандартные центры 1/3 октавы в пределах 100-10000 Гц
@@ -1455,6 +1465,142 @@
             // Границы полос: center * 2^(±1/6)
             const factor = Math.pow(2, 1/6);
             return centers.map(c => ({ low: c / factor, high: c * factor }));
+        }
+
+        // Калибровка при запуске приложения
+        async function performStartupCalibration() {
+            try {
+                console.log('Начинаем калибровку при запуске...');
+                
+                // Запрашиваем доступ к микрофону
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    }
+                });
+                
+                // Создаем AudioContext для калибровки
+                startupCalibrationAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                startupCalibrationAnalyser = startupCalibrationAudioContext.createAnalyser();
+                startupCalibrationAnalyser.fftSize = 4096;
+                startupCalibrationAnalyser.smoothingTimeConstant = 0.3;
+                startupCalibrationAnalyser.minDecibels = -100;
+                startupCalibrationAnalyser.maxDecibels = -20;
+                
+                startupCalibrationMicrophone = startupCalibrationAudioContext.createMediaStreamSource(stream);
+                startupCalibrationMicrophone.connect(startupCalibrationAnalyser);
+                
+                // Запускаем эталонный тон 1000 Гц
+                startupToneOscillator = startupCalibrationAudioContext.createOscillator();
+                startupToneOscillator.frequency.value = 1000;
+                startupToneOscillator.type = 'sine';
+                
+                startupToneGainNode = startupCalibrationAudioContext.createGain();
+                startupToneGainNode.gain.value = 0.5; // Средняя громкость
+                
+                startupToneOscillator.connect(startupToneGainNode);
+                startupToneGainNode.connect(startupCalibrationAudioContext.destination);
+                
+                startupToneOscillator.start();
+                isStartupCalibrating = true;
+                
+                // Ждем 1 секунду для стабилизации
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Измеряем в течение 3 секунд
+                let sumLevels = 0;
+                let countMeasurements = 0;
+                const calibrationDuration = 3000; // 3 секунды
+                const startTime = Date.now();
+                
+                const measureLevel = () => {
+                    if (!isStartupCalibrating) return;
+                    
+                    const bufferLength = startupCalibrationAnalyser.frequencyBinCount;
+                    const floatDbArray = new Float32Array(bufferLength);
+                    startupCalibrationAnalyser.getFloatFrequencyData(floatDbArray);
+                    
+                    // Измеряем уровень на 1000 Гц
+                    const sampleRate = startupCalibrationAudioContext.sampleRate;
+                    const nyquist = sampleRate / 2;
+                    const targetBin = Math.round((1000 / nyquist) * bufferLength);
+                    
+                    if (targetBin < bufferLength) {
+                        let dB = floatDbArray[targetBin];
+                        if (isFinite(dB) && dB > -100) {
+                            // Применяем частотную калибровку и A-weighting
+                            const micOffset = getFrequencyOffset(1000) || 0;
+                            dB += micOffset + getAWeighting(1000);
+                            
+                            sumLevels += dB;
+                            countMeasurements++;
+                        }
+                    }
+                    
+                    const elapsed = Date.now() - startTime;
+                    if (elapsed < calibrationDuration) {
+                        startupCalibrationRafId = requestAnimationFrame(measureLevel);
+                    } else {
+                        // Калибровка завершена
+                        if (countMeasurements > 0) {
+                            startupCalibrationLevel = sumLevels / countMeasurements;
+                            console.log('Калибровка при запуске завершена. Эталонный уровень:', startupCalibrationLevel.toFixed(1), 'дБ');
+                        }
+                        
+                        // Останавливаем калибровку
+                        stopStartupCalibration();
+                    }
+                };
+                
+                measureLevel();
+                
+            } catch(err) {
+                console.error('Ошибка калибровки при запуске:', err);
+                stopStartupCalibration();
+            }
+        }
+        
+        // Остановка калибровки при запуске
+        function stopStartupCalibration() {
+            isStartupCalibrating = false;
+            
+            if (startupCalibrationRafId) {
+                cancelAnimationFrame(startupCalibrationRafId);
+                startupCalibrationRafId = null;
+            }
+            
+            if (startupToneOscillator) {
+                try {
+                    startupToneOscillator.stop();
+                    startupToneOscillator.disconnect();
+                } catch(e) {}
+                startupToneOscillator = null;
+            }
+            
+            if (startupToneGainNode) {
+                try {
+                    startupToneGainNode.disconnect();
+                } catch(e) {}
+                startupToneGainNode = null;
+            }
+            
+            if (startupCalibrationMicrophone) {
+                try {
+                    startupCalibrationMicrophone.disconnect();
+                } catch(e) {}
+                startupCalibrationMicrophone = null;
+            }
+            
+            if (startupCalibrationAudioContext) {
+                try {
+                    startupCalibrationAudioContext.close();
+                } catch(e) {}
+                startupCalibrationAudioContext = null;
+            }
+            
+            startupCalibrationAnalyser = null;
         }
 
         function computeLAeqFrameFromFloatDb(floatDbArray, sampleRate) {
@@ -1482,8 +1628,8 @@
                 // A-взвешивание
                 dB += getAWeighting(freq);
 
-                // Перевод в линейную мощность с глобальной калибровкой
-                const power = Math.pow(10, (dB + GLOBAL_CALIBRATION_OFFSET) / 10);
+                // Перевод в линейную мощность с базовой калибровкой
+                const power = Math.pow(10, (dB + BASE_CALIBRATION_OFFSET) / 10);
 
                 // Находим полосу
                 for (let b = 0; b < centers.length; b++) {
@@ -1610,14 +1756,19 @@
             noiseGain = null;
         }
 
-        // Экран запуска
+        // Экран запуска с калибровкой
         launchBtn.addEventListener('click', async () => {
             try {
+                // Запускаем калибровку при старте
+                await performStartupCalibration();
+                
                 if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
                     await document.documentElement.requestFullscreen();
                     document.documentElement.classList.add('fs');
                 }
-            } catch(e) {}
+            } catch(e) {
+                console.error('Ошибка запуска:', e);
+            }
         });
 
         toggleBtn.addEventListener('click', async () => {
@@ -1720,6 +1871,8 @@
                 startTimeMs = Date.now();
                 endTimeMs = startTimeMs + measurementLimitSec * 1000;
                 isMeasuring = true;
+                
+                // Калибровка при запуске уже выполнена
                 // Убираем выделение среднего при новом замере
                 avgElement.classList.remove('highlight');
                 // Инициализируем целевую строку средней в зависимости от фазы
