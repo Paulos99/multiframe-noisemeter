@@ -949,15 +949,14 @@
         // Частотная калибровка
         const CALIBRATION_FREQUENCIES = [125, 250, 500, 1000, 2000, 4000, 8000]; // Гц
         // Предустановленные данные калибровки (финальные измерения)
-        // Высокие частоты (1k-10k) более чувствительны для лучшей детекции снижения шума
         let frequencyCalibration = {
             125: { measured: 97.4, reference: 92.47, offset: -4.93 },
             250: { measured: 94.7, reference: 90.0, offset: -4.7 },
             500: { measured: 92.0, reference: 85.0, offset: -7.0 },
-            1000: { measured: 91.0, reference: 78.0, offset: -12.0 },
-            2000: { measured: 83.7, reference: 70.0, offset: -11.0 },
-            4000: { measured: 79.0, reference: 57.0, offset: -18.0 },
-            8000: { measured: 75.3, reference: 53.0, offset: -18.0 }
+            1000: { measured: 91.0, reference: 78.0, offset: -13.0 },
+            2000: { measured: 83.7, reference: 70.0, offset: -13.7 },
+            4000: { measured: 79.0, reference: 57.0, offset: -22.0 },
+            8000: { measured: 75.3, reference: 53.0, offset: -22.3 }
         }; // {freq: {measured: dB, reference: dB, offset: dB}}
         let isCalibrating = false;
         let calibrationAudioContext = null;
