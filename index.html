@@ -545,26 +545,29 @@
             animation: pulse-button 1.5s ease-in-out infinite;
         }
         
-        /* Кнопка калибровки (СКРЫТА - калибровка предустановлена) */
+        /* Кнопка калибровки - скрытая но активная */
         #calibrationBtn {
-            display: none !important; /* Калибровка завершена и зафиксирована */
             position: fixed;
             top: 10px;
             right: 10px;
             padding: 8px 16px;
             font-size: 14px;
-            background-color: rgba(1, 100, 79, 0.15);
-            color: var(--accent);
-            border: 1px solid rgba(1, 100, 79, 0.3);
+            background-color: rgba(255, 255, 255, 0.02);
+            color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.02);
             border-radius: 6px;
             cursor: pointer;
             z-index: 1001;
             transition: all 0.2s ease;
+            box-shadow: none;
         }
         
         #calibrationBtn:hover {
-            background-color: rgba(1, 100, 79, 0.25);
+            background-color: rgba(1, 100, 79, 0.1);
+            color: var(--accent);
+            border-color: rgba(1, 100, 79, 0.2);
             transform: translateY(-1px);
+            box-shadow: none;
         }
         
         .fs #calibrationBtn {
@@ -1024,12 +1027,29 @@
         
         // ====== ЧАСТОТНАЯ КАЛИБРОВКА ======
         
-        // Загрузка калибровки из localStorage (ОТКЛЮЧЕНО - используются предустановленные данные)
+        // Загрузка калибровки из localStorage
         function loadFrequencyCalibration() {
-            // Калибровка предустановлена и не изменяется
-            console.log('Используются предустановленные данные калибровки');
-            console.log('GLOBAL_CALIBRATION_OFFSET:', GLOBAL_CALIBRATION_OFFSET);
-            console.log('Частотная калибровка:', frequencyCalibration);
+            try {
+                const saved = localStorage.getItem('noiseMeterFreqCalibration');
+                if (saved !== null) {
+                    frequencyCalibration = JSON.parse(saved);
+                    console.log('Частотная калибровка загружена:', frequencyCalibration);
+                }
+            } catch(e) {
+                console.error('Ошибка загрузки калибровки:', e);
+                frequencyCalibration = {};
+            }
+            
+            // Загрузка базовой калибровки
+            try {
+                const savedBase = localStorage.getItem('noiseMeterBaseCalibration');
+                if (savedBase !== null) {
+                    GLOBAL_CALIBRATION_OFFSET = parseFloat(savedBase);
+                    console.log('Базовая калибровка загружена:', GLOBAL_CALIBRATION_OFFSET);
+                }
+            } catch(e) {
+                console.error('Ошибка загрузки базовой калибровки:', e);
+            }
         }
         
         // Сохранение калибровки в localStorage
@@ -1560,7 +1580,7 @@
                 frequencyCalibration = {};
                 saveFrequencyCalibration();
                 
-                // Сброс базовой калибровки (предустановленное значение)
+                // Сброс базовой калибровки
                 GLOBAL_CALIBRATION_OFFSET = 34.0;
                 saveBaseCalibration();
                 
