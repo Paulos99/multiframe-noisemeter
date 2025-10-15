@@ -1,4 +1,4 @@
-const CACHE_NAME = 'multiframe-noisemeter-v36-pwa-enabled';
+const CACHE_NAME = 'multiframe-noisemeter-v42-fixed-clean';
 const urlsToCache = [
   './',
   './index.html',
