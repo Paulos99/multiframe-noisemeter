@@ -188,11 +188,14 @@
             padding: 15px 25px; 
             border-radius: 10px;
             width: 220px;
+            min-height: 70px;
             background-color: #01644f;
             color: #ffffff;
             border: none;
             font-weight: bold;
             text-transform: uppercase;
+            touch-action: manipulation;
+            position: relative;
         }
 
         /* Экран запуска вне fullscreen */
@@ -298,6 +301,11 @@
             color: #ffffff;
             box-shadow: 0 6px 16px rgba(1, 100, 79, 0.18);
             transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease;
+            min-height: 60px;
+            min-width: 120px;
+            position: relative;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
         button:hover {
             background-color: var(--accent-dark);
@@ -517,11 +525,14 @@
                 padding: 15px 25px; 
                 border-radius: 10px;
                 width: 220px;
+                min-height: 70px;
                 background-color: #01644f;
                 color: #ffffff;
                 border: none;
                 font-weight: bold;
                 text-transform: uppercase;
+                touch-action: manipulation;
+                position: relative;
             }
         }
 
