@@ -815,23 +815,24 @@
             const noiseBuffer = noiseContext.createBuffer(1, bufferSize, noiseContext.sampleRate);
             const output = noiseBuffer.getChannelData(0);
             
-            // Создаем улучшенный шум с акцентом на низкие частоты
+            // Создаем чистый белый шум с акцентом на высокие частоты (2000-8000 Гц)
             for (let i = 0; i < bufferSize; i++) {
                 // Базовый белый шум
                 let sample = Math.random() * 2 - 1;
                 
-                // Добавляем низкочастотный компонент (100-400 Гц) - уменьшенный акцент
+                // Добавляем высокочастотные компоненты (2000-8000 Гц) +20%
                 const time = i / noiseContext.sampleRate;
-                const lowFreq1 = Math.sin(2 * Math.PI * 100 * time) * 0.15; // 100 Гц - уменьшено
-                const lowFreq2 = Math.sin(2 * Math.PI * 200 * time) * 0.1; // 200 Гц - уменьшено
-                const lowFreq3 = Math.sin(2 * Math.PI * 300 * time) * 0.08; // 300 Гц - уменьшено
-                const lowFreq4 = Math.sin(2 * Math.PI * 400 * time) * 0.05; // 400 Гц - уменьшено
+                const highFreq1 = Math.sin(2 * Math.PI * 2000 * time) * 0.05; // 2000 Гц
+                const highFreq2 = Math.sin(2 * Math.PI * 3000 * time) * 0.05; // 3000 Гц
+                const highFreq3 = Math.sin(2 * Math.PI * 4000 * time) * 0.05; // 4000 Гц
+                const highFreq4 = Math.sin(2 * Math.PI * 6000 * time) * 0.03; // 6000 Гц
+                const highFreq5 = Math.sin(2 * Math.PI * 8000 * time) * 0.02; // 8000 Гц
                 
-                // Комбинируем белый шум с низкочастотными компонентами - больше белого шума
-                sample = (sample * 0.8) + (lowFreq1 + lowFreq2 + lowFreq3 + lowFreq4);
+                // Комбинируем белый шум с высокочастотными компонентами (+20% энергии)
+                sample = sample + (highFreq1 + highFreq2 + highFreq3 + highFreq4 + highFreq5);
                 
                 // Ограничиваем амплитуду
-                output[i] = Math.max(-1, Math.min(1, sample));
+                output[i] = Math.max(-1, Math.min(1, sample * 0.9)); // немного уменьшаем для избежания клиппинга
             }
             
             // Создаем источник и gain node КАЖДЫЙ РАЗ

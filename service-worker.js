@@ -1,4 +1,4 @@
-const CACHE_NAME = 'multiframe-noisemeter-v43-calibration-1000hz';
+const CACHE_NAME = 'multiframe-noisemeter-v44-highfreq-noise';
 const urlsToCache = [
   './',
   './index.html',
