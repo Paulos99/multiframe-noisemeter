@@ -941,13 +941,13 @@
         const CALIBRATION_FREQUENCIES = [125, 250, 500, 1000, 2000, 4000, 8000]; // Гц
         // Финальные значения калибровки (профессиональный прибор)
         let frequencyCalibration = {
-            125: { measured: 97.4, reference: 92.47, offset: -4.93 },
-            250: { measured: 94.7, reference: 90, offset: -4.7 },
-            500: { measured: 92, reference: 85, offset: -7 },
-            1000: { measured: 91, reference: 78, offset: -13 },
-            2000: { measured: 83.7, reference: 70, offset: -13.7 },
-            4000: { measured: 79, reference: 57, offset: -22 },
-            8000: { measured: 75.3, reference: 53, offset: -22.3 }
+            125: { measured: 97.4, reference: 79.4, offset: -18 },
+            250: { measured: 94.7, reference: 87, offset: -7.7 },
+            500: { measured: 92, reference: 87, offset: -5 },
+            1000: { measured: 88.6, reference: 81, offset: -7.6 },
+            2000: { measured: 85, reference: 84.5, offset: -0.5 },
+            4000: { measured: 79, reference: 67, offset: -12 },
+            8000: { measured: 75.3, reference: 56, offset: -19.3 }
         };
         let isCalibrating = false;
         let calibrationAudioContext = null;
@@ -1395,18 +1395,18 @@
                 
                 // Сброс к финальным значениям калибровки
                 frequencyCalibration = {
-                    125: { measured: 97.4, reference: 92.47, offset: -4.93 },
-                    250: { measured: 94.7, reference: 90, offset: -4.7 },
-                    500: { measured: 92, reference: 85, offset: -7 },
-                    1000: { measured: 91, reference: 78, offset: -13 },
-                    2000: { measured: 83.7, reference: 70, offset: -13.7 },
-                    4000: { measured: 79, reference: 57, offset: -22 },
-                    8000: { measured: 75.3, reference: 53, offset: -22.3 }
+                    125: { measured: 97.4, reference: 79.4, offset: -18 },
+                    250: { measured: 94.7, reference: 87, offset: -7.7 },
+                    500: { measured: 92, reference: 87, offset: -5 },
+                    1000: { measured: 88.6, reference: 81, offset: -7.6 },
+                    2000: { measured: 85, reference: 84.5, offset: -0.5 },
+                    4000: { measured: 79, reference: 67, offset: -12 },
+                    8000: { measured: 75.3, reference: 56, offset: -19.3 }
                 };
                 saveFrequencyCalibration();
                 
                 // Сброс базовой калибровки к финальному значению
-                GLOBAL_CALIBRATION_OFFSET = 34;
+                GLOBAL_CALIBRATION_OFFSET = 10.3;
                 saveBaseCalibration();
                 
                 closeCalibrationModal();
@@ -1544,7 +1544,7 @@
         // ====== 1/3-октавные полосы и правильный расчет LAeq ======
         
         // Глобальный калибровочный оффсет для приведения к SpectraPLUS
-        let GLOBAL_CALIBRATION_OFFSET = 34; // дБ (финальная калибровка)
+        let GLOBAL_CALIBRATION_OFFSET = 10.3; // дБ (финальная калибровка - среднее значение)
         
         function getThirdOctaveCenters() {
             // Стандартные центры 1/3 октавы в пределах 100-10000 Гц
