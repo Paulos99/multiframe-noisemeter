@@ -1,10 +1,8 @@
-const CACHE_NAME = 'multiframe-noisemeter-v36-pwa-enabled';
+const CACHE_NAME = 'multiframe-noisemeter-v32-no-shadow';
 const urlsToCache = [
   './',
   './index.html',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png'
+  './manifest.json'
 ];
 
 // Установка Service Worker и кэширование файлов

@@ -3,14 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    
-    <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#01644f">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Шумомер">
-    <link rel="manifest" href="./manifest.json">
-    
     <title>Шумомер</title>
     <style>
         :root {
@@ -196,14 +188,11 @@
             padding: 15px 25px; 
             border-radius: 10px;
             width: 220px;
-            min-height: 70px;
             background-color: #01644f;
             color: #ffffff;
             border: none;
             font-weight: bold;
             text-transform: uppercase;
-            touch-action: manipulation;
-            position: relative;
         }
 
         /* Экран запуска вне fullscreen */
@@ -309,11 +298,6 @@
             color: #ffffff;
             box-shadow: 0 6px 16px rgba(1, 100, 79, 0.18);
             transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease;
-            min-height: 60px;
-            min-width: 120px;
-            position: relative;
-            touch-action: manipulation;
-            -webkit-tap-highlight-color: transparent;
         }
         button:hover {
             background-color: var(--accent-dark);
@@ -533,14 +517,11 @@
                 padding: 15px 25px; 
                 border-radius: 10px;
                 width: 220px;
-                min-height: 70px;
                 background-color: #01644f;
                 color: #ffffff;
                 border: none;
                 font-weight: bold;
                 text-transform: uppercase;
-                touch-action: manipulation;
-                position: relative;
             }
         }
 
@@ -564,16 +545,16 @@
             animation: pulse-button 1.5s ease-in-out infinite;
         }
         
-        /* Кнопка калибровки - скрытая но активная */
+        /* Кнопка калибровки */
         #calibrationBtn {
             position: fixed;
             top: 10px;
             right: 10px;
             padding: 8px 16px;
             font-size: 14px;
-            background-color: rgba(255, 255, 255, 0.02);
+            background-color: transparent;
             color: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.05);
             border-radius: 6px;
             cursor: pointer;
             z-index: 1001;
@@ -583,9 +564,8 @@
         
         #calibrationBtn:hover {
             background-color: rgba(1, 100, 79, 0.1);
-            color: var(--accent);
-            border-color: rgba(1, 100, 79, 0.2);
-            transform: translateY(-1px);
+            color: rgba(1, 100, 79, 0.5);
+            border: 1px solid rgba(1, 100, 79, 0.2);
             box-shadow: none;
         }
         
@@ -875,34 +855,26 @@
         <div class="calibration-panel" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
             <h2 style="font-size: 20px; margin: 0 0 15px 0;">Калибровка микрофона</h2>
             
-            <!-- БАЗОВАЯ КАЛИБРОВКА ПО БЕЛОМУ ШУМУ -->
+            <!-- БАЗОВАЯ КАЛИБРОВКА - РУЧНОЙ ВВОД -->
             <div style="background: #f0f7f5; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 2px solid var(--accent);">
-                <h3 style="font-size: 16px; margin: 0 0 10px 0; color: var(--accent);">1. Базовая калибровка (белый шум)</h3>
-                <p style="font-size: 12px; margin: 0 0 12px 0; color: #667d81;">Приложение воспроизводит белый шум. Введите показание профессионального прибора для базовой коррекции всех частот.</p>
+                <h3 style="font-size: 16px; margin: 0 0 10px 0; color: var(--accent);">1. Базовая калибровка</h3>
+                <p style="font-size: 12px; margin: 0 0 12px 0; color: #667d81;">Введите значение BASE_CALIBRATION_OFFSET для базовой коррекции всех частот.</p>
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 12px;">
-                    <div>
-                        <label style="display: block; font-size: 12px; margin-bottom: 5px; color: #667d81;">Наша программа:</label>
-                        <div id="baseCalibrationMeasured" style="font-size: 24px; font-weight: 700; color: var(--accent); text-align: center; padding: 8px; background: #fff; border-radius: 6px; border: 1px solid #ddd;">-- dB</div>
-                    </div>
-                    <div>
-                        <label style="display: block; font-size: 12px; margin-bottom: 5px; color: #667d81;">Проф. прибор:</label>
-                        <input type="number" id="baseCalibrationReference" 
-                               placeholder="94.0" 
-                               step="0.1" 
-                               min="0" 
-                               max="120"
-                               style="width: 100%; padding: 8px; font-size: 16px; text-align: center; border: 1px solid var(--accent); border-radius: 6px; box-sizing: border-box; font-weight: 600;">
-                    </div>
+                <div style="margin-bottom: 12px;">
+                    <label style="display: block; font-size: 12px; margin-bottom: 5px; color: #667d81;">BASE_CALIBRATION_OFFSET (дБ):</label>
+                    <input type="number" id="baseCalibrationInput" 
+                           placeholder="34.0" 
+                           step="0.1" 
+                           min="-50" 
+                           max="100"
+                           value="34.0"
+                           style="width: 100%; padding: 12px; font-size: 18px; text-align: center; border: 1px solid var(--accent); border-radius: 6px; box-sizing: border-box; font-weight: 600;">
                 </div>
                 
-                <div style="display: flex; gap: 10px;">
-                    <button id="baseCalibrationStartBtn" class="btn-primary" style="flex: 1; padding: 10px; font-size: 13px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">▶ Запустить белый шум</button>
-                    <button id="baseCalibrationApplyBtn" class="btn-primary" style="flex: 1; padding: 10px; font-size: 13px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Применить</button>
-                </div>
+                <button id="baseCalibrationApplyBtn" class="btn-primary" style="width: 100%; padding: 10px; font-size: 13px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">Применить</button>
                 
                 <div id="baseCalibrationOffset" style="margin-top: 10px; padding: 8px; background: #fff; border-radius: 6px; text-align: center; font-size: 13px; color: #667d81; border: 1px solid #ddd;">
-                    Текущее смещение: <strong style="color: var(--accent);">+36.6 dB</strong>
+                    Текущее значение: <strong style="color: var(--accent);">+34.0 dB</strong>
                 </div>
             </div>
             
@@ -952,15 +924,6 @@
     </div>
 
     <script>
-        // Регистрация Service Worker для PWA
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then(reg => console.log('Service Worker зарегистрирован:', reg))
-                    .catch(err => console.log('Ошибка регистрации Service Worker:', err));
-            });
-        }
-
         // JavaScript код остается без изменений
         let audioContext = null;
         let analyser = null;
@@ -976,16 +939,16 @@
         
         // Частотная калибровка
         const CALIBRATION_FREQUENCIES = [125, 250, 500, 1000, 2000, 4000, 8000]; // Гц
-        // Предустановленные данные калибровки (финальные измерения)
+        // Финальные значения калибровки (профессиональный прибор)
         let frequencyCalibration = {
             125: { measured: 97.4, reference: 92.47, offset: -4.93 },
-            250: { measured: 94.7, reference: 90.0, offset: -4.7 },
-            500: { measured: 92.0, reference: 85.0, offset: -7.0 },
-            1000: { measured: 91.0, reference: 78.0, offset: -13.0 },
-            2000: { measured: 83.7, reference: 70.0, offset: -13.7 },
-            4000: { measured: 79.0, reference: 57.0, offset: -22.0 },
-            8000: { measured: 75.3, reference: 53.0, offset: -22.3 }
-        }; // {freq: {measured: dB, reference: dB, offset: dB}}
+            250: { measured: 94.7, reference: 90, offset: -4.7 },
+            500: { measured: 92, reference: 85, offset: -7 },
+            1000: { measured: 91, reference: 78, offset: -13 },
+            2000: { measured: 83.7, reference: 70, offset: -13.7 },
+            4000: { measured: 79, reference: 57, offset: -22 },
+            8000: { measured: 75.3, reference: 53, offset: -22.3 }
+        };
         let isCalibrating = false;
         let calibrationAudioContext = null;
         let calibrationAnalyser = null;
@@ -1018,10 +981,8 @@
         const calibrationFrequencyList = document.getElementById('calibrationFrequencyList');
         const calibrationResults = document.getElementById('calibrationResults');
         const calibrationResultsText = document.getElementById('calibrationResultsText');
-        const baseCalibrationStartBtn = document.getElementById('baseCalibrationStartBtn');
         const baseCalibrationApplyBtn = document.getElementById('baseCalibrationApplyBtn');
-        const baseCalibrationMeasured = document.getElementById('baseCalibrationMeasured');
-        const baseCalibrationReference = document.getElementById('baseCalibrationReference');
+        const baseCalibrationInput = document.getElementById('baseCalibrationInput');
         const baseCalibrationOffset = document.getElementById('baseCalibrationOffset');
         
         const freqCtx = freqCanvas.getContext ? freqCanvas.getContext('2d') : null;
@@ -1378,205 +1339,35 @@
         }
         
         
-        // ====== БАЗОВАЯ КАЛИБРОВКА ПО БЕЛОМУ ШУМУ ======
-        
-        let baseCalibrationActive = false;
-        let baseCalibrationRafId = null;
-        
-        // Запуск базовой калибровки
-        async function startBaseCalibration() {
-            if (baseCalibrationActive) {
-                // Если уже идет - останавливаем
-                stopBaseCalibration();
-                return;
-            }
-            
-            try {
-                // Запускаем белый шум
-                startWhiteNoise();
-                
-                // Запускаем измерение микрофоном
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    audio: {
-                        echoCancellation: false,
-                        noiseSuppression: false,
-                        autoGainControl: false
-                    }
-                });
-                
-                calibrationAudioContext = new (window.AudioContext || window.webkitAudioContext)();
-                calibrationAnalyser = calibrationAudioContext.createAnalyser();
-                calibrationAnalyser.fftSize = 4096;
-                calibrationAnalyser.smoothingTimeConstant = 0.5;
-                calibrationAnalyser.minDecibels = -100;
-                calibrationAnalyser.maxDecibels = -20;
-                
-                calibrationMicrophone = calibrationAudioContext.createMediaStreamSource(stream);
-                calibrationMicrophone.connect(calibrationAnalyser);
-                
-                baseCalibrationActive = true;
-                baseCalibrationStartBtn.textContent = '⏸ Остановить';
-                baseCalibrationStartBtn.style.background = '#e53935';
-                
-                // Непрерывное обновление измерений
-                let sumPower = 0;
-                let countFrames = 0;
-                let lastUpdateTime = Date.now();
-                
-                const updateMeasurement = () => {
-                    if (!baseCalibrationActive) return;
-                    
-                    const bufferLength = calibrationAnalyser.frequencyBinCount;
-                    const floatDbArray = new Float32Array(bufferLength);
-                    calibrationAnalyser.getFloatFrequencyData(floatDbArray);
-                    
-                    // Вычисляем LAeq без применения GLOBAL_CALIBRATION_OFFSET
-                    const framePower = computeLAeqFrameFromFloatDbWithoutGlobalOffset(floatDbArray, calibrationAudioContext.sampleRate);
-                    
-                    sumPower += framePower;
-                    countFrames++;
-                    
-                    // Обновляем дисплей каждые 200 мс
-                    const now = Date.now();
-                    if (now - lastUpdateTime > 200) {
-                        const meanPower = sumPower / countFrames;
-                        const avgDb = meanPower > 0 ? 10 * Math.log10(meanPower) + 100 : 0;
-                        
-                        baseCalibrationMeasured.textContent = avgDb.toFixed(1) + ' dB';
-                        
-                        lastUpdateTime = now;
-                    }
-                    
-                    baseCalibrationRafId = requestAnimationFrame(updateMeasurement);
-                };
-                
-                updateMeasurement();
-                
-            } catch(err) {
-                console.error('Ошибка базовой калибровки:', err);
-                alert('Ошибка доступа к микрофону: ' + err.message);
-                stopBaseCalibration();
-            }
-        }
-        
-        // Остановка базовой калибровки
-        function stopBaseCalibration() {
-            baseCalibrationActive = false;
-            
-            if (baseCalibrationRafId) {
-                cancelAnimationFrame(baseCalibrationRafId);
-                baseCalibrationRafId = null;
-            }
-            
-            stopWhiteNoise();
-            
-            if (calibrationMicrophone) {
-                try {
-                    calibrationMicrophone.disconnect();
-                    calibrationMicrophone = null;
-                } catch(e) {}
-            }
-            
-            if (calibrationAudioContext) {
-                try {
-                    calibrationAudioContext.close();
-                    calibrationAudioContext = null;
-                } catch(e) {}
-            }
-            
-            calibrationAnalyser = null;
-            
-            baseCalibrationStartBtn.textContent = '▶ Запустить белый шум';
-            baseCalibrationStartBtn.style.background = 'var(--accent)';
-        }
+        // ====== БАЗОВАЯ КАЛИБРОВКА - РУЧНОЙ ВВОД ======
         
         // Применение базовой калибровки
         function applyBaseCalibration() {
-            const measuredText = baseCalibrationMeasured.textContent;
-            if (measuredText === '-- dB' || measuredText === '') {
-                alert('Сначала запустите измерение белого шума');
+            const offsetValue = parseFloat(baseCalibrationInput.value);
+            
+            if (isNaN(offsetValue) || offsetValue < -50 || offsetValue > 100) {
+                alert('Введите корректное значение от -50 до 100 дБ');
+                baseCalibrationInput.focus();
                 return;
             }
-            
-            const measuredValue = parseFloat(measuredText);
-            const referenceValue = parseFloat(baseCalibrationReference.value);
-            
-            if (isNaN(referenceValue) || referenceValue < 0 || referenceValue > 120) {
-                alert('Введите корректное значение от 0 до 120 дБ');
-                baseCalibrationReference.focus();
-                return;
-            }
-            
-            const offset = referenceValue - measuredValue;
             
             // Применяем новое смещение
-            GLOBAL_CALIBRATION_OFFSET = offset;
+            GLOBAL_CALIBRATION_OFFSET = offsetValue;
             saveBaseCalibration();
             
             // Обновляем UI
-            baseCalibrationOffset.innerHTML = `Текущее смещение: <strong style="color: var(--accent);">${offset >= 0 ? '+' : ''}${offset.toFixed(1)} dB</strong>`;
+            baseCalibrationOffset.innerHTML = `Текущее значение: <strong style="color: var(--accent);">${offsetValue >= 0 ? '+' : ''}${offsetValue.toFixed(1)} dB</strong>`;
             
-            alert(`Базовая калибровка применена!\nСмещение: ${offset >= 0 ? '+' : ''}${offset.toFixed(1)} dB\n\nТеперь можете перейти к частотной калибровке или закрыть окно.`);
-            
-            // Останавливаем измерение
-            stopBaseCalibration();
-        }
-        
-        // Версия computeLAeqFrameFromFloatDb без глобального смещения (для базовой калибровки)
-        function computeLAeqFrameFromFloatDbWithoutGlobalOffset(floatDbArray, sampleRate) {
-            const nyquist = sampleRate / 2;
-            const bins = floatDbArray.length;
-            const centers = getThirdOctaveCenters();
-            const edges = getBandEdges(centers);
-
-            const bandPowers = new Array(centers.length).fill(0);
-            let totalValidBins = 0;
-
-            for (let i = 0; i < bins; i++) {
-                const freq = (i / bins) * nyquist;
-                if (freq < 100 || freq > 10000) continue;
-
-                let dB = floatDbArray[i];
-                if (!isFinite(dB) || dB < -100) continue;
-
-                // Частотная калибровка микрофона
-                const micOffset = getFrequencyOffset(freq) || 0;
-                dB += micOffset;
-
-                // A-взвешивание
-                dB += getAWeighting(freq);
-
-                // Перевод в линейную мощность БЕЗ глобальной калибровки
-                const power = Math.pow(10, dB / 10);
-
-                for (let b = 0; b < centers.length; b++) {
-                    const e = edges[b];
-                    if (freq >= e.low && freq < e.high) {
-                        bandPowers[b] += power;
-                        totalValidBins++;
-                        break;
-                    }
-                }
-            }
-
-            if (totalValidBins === 0) return 0.0000001;
-
-            let totalPower = 0;
-            for (let b = 0; b < bandPowers.length; b++) {
-                totalPower += bandPowers[b];
-            }
-
-            const avgPower = totalPower / totalValidBins;
-
-            return avgPower;
+            alert(`Базовая калибровка применена!\nBASE_CALIBRATION_OFFSET: ${offsetValue >= 0 ? '+' : ''}${offsetValue.toFixed(1)} dB`);
         }
         
         // Открытие модального окна калибровки
         function openCalibrationModal() {
             calibrationModal.classList.add('active');
             
-            // Обновляем отображение текущего смещения
-            baseCalibrationOffset.innerHTML = `Текущее смещение: <strong style="color: var(--accent);">${GLOBAL_CALIBRATION_OFFSET >= 0 ? '+' : ''}${GLOBAL_CALIBRATION_OFFSET.toFixed(1)} dB</strong>`;
+            // Обновляем отображение текущего значения
+            baseCalibrationInput.value = GLOBAL_CALIBRATION_OFFSET.toFixed(1);
+            baseCalibrationOffset.innerHTML = `Текущее значение: <strong style="color: var(--accent);">${GLOBAL_CALIBRATION_OFFSET >= 0 ? '+' : ''}${GLOBAL_CALIBRATION_OFFSET.toFixed(1)} dB</strong>`;
             
             createFrequencyUI();
         }
@@ -1584,7 +1375,6 @@
         // Закрытие модального окна калибровки
         function closeCalibrationModal() {
             calibrationModal.classList.remove('active');
-            stopBaseCalibration();
             stopCalibrationMeasurement();
             stopTone();
             if (currentToneFreq) {
@@ -1602,14 +1392,21 @@
             if (confirm('Вы уверены, что хотите сбросить ВСЮ калибровку (базовую и частотную)?')) {
                 stopTone();
                 stopCalibrationMeasurement();
-                stopBaseCalibration();
                 
-                // Сброс частотной калибровки
-                frequencyCalibration = {};
+                // Сброс к финальным значениям калибровки
+                frequencyCalibration = {
+                    125: { measured: 97.4, reference: 92.47, offset: -4.93 },
+                    250: { measured: 94.7, reference: 90, offset: -4.7 },
+                    500: { measured: 92, reference: 85, offset: -7 },
+                    1000: { measured: 91, reference: 78, offset: -13 },
+                    2000: { measured: 83.7, reference: 70, offset: -13.7 },
+                    4000: { measured: 79, reference: 57, offset: -22 },
+                    8000: { measured: 75.3, reference: 53, offset: -22.3 }
+                };
                 saveFrequencyCalibration();
                 
-                // Сброс базовой калибровки
-                GLOBAL_CALIBRATION_OFFSET = 36.6;
+                // Сброс базовой калибровки к финальному значению
+                GLOBAL_CALIBRATION_OFFSET = 34;
                 saveBaseCalibration();
                 
                 closeCalibrationModal();
@@ -1620,7 +1417,6 @@
         calibrationBtn.addEventListener('click', openCalibrationModal);
         calibrationCloseBtn.addEventListener('click', closeCalibrationModal);
         calibrationResetBtn.addEventListener('click', resetFrequencyCalibration);
-        baseCalibrationStartBtn.addEventListener('click', startBaseCalibration);
         baseCalibrationApplyBtn.addEventListener('click', applyBaseCalibration);
         
         calibrationModal.addEventListener('click', (e) => {
@@ -1748,7 +1544,7 @@
         // ====== 1/3-октавные полосы и правильный расчет LAeq ======
         
         // Глобальный калибровочный оффсет для приведения к SpectraPLUS
-        let GLOBAL_CALIBRATION_OFFSET = 36.6; // дБ (финальная калибровка, скорректировано 64.3-61.7=+2.6)
+        let GLOBAL_CALIBRATION_OFFSET = 34; // дБ (финальная калибровка)
         
         function getThirdOctaveCenters() {
             // Стандартные центры 1/3 октавы в пределах 100-10000 Гц
