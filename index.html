@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Шумомер</title>
+    <meta name="theme-color" content="#01644f">
+    <link rel="manifest" href="MultiFRAME PWA/manifest.json">
     <style>
         :root {
             --accent: #01644f;
@@ -939,6 +941,16 @@
     </div>
 
     <script>
+        // Регистрация service worker для PWA
+        (function registerSW(){
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function(){
+                    navigator.serviceWorker.register('./MultiFRAME PWA/service-worker.js').catch(function(e){
+                        console.warn('SW register failed', e);
+                    });
+                });
+            }
+        })();
         // JavaScript код остается без изменений
         let audioContext = null;
         let analyser = null;
@@ -1011,6 +1023,8 @@
         let currentFftSize = 2048;
         // Два этапа измерения: до/после
         let measurementPhase = 'before'; // 'before' | 'after'
+        // Флаг принудительного старта с фазы "до" для следующего запуска
+        let forcePhaseBeforeOnNextStart = false;
         // Медианное сглаживание спектра по окну из 80 кадров
         const SMOOTH_WINDOW = 80;
         let spectrumBuffer = [];
@@ -1861,6 +1875,11 @@
             try {
                 // Убираем анимацию пульсации при нажатии Старт
                 toggleBtn.classList.remove('pulse-attention');
+                // Если был явный «Завершить», принудительно начинаем новый цикл с фазы ДО
+                if (forcePhaseBeforeOnNextStart) {
+                    measurementPhase = 'before';
+                    forcePhaseBeforeOnNextStart = false;
+                }
                 
                 // Новый цикл начинается, когда фаза ДО и нажали старт заново — очищаем старые графики/значения
                 if (measurementPhase === 'before') {
@@ -2107,10 +2126,12 @@
                 resetBtn.textContent = 'Стоп';
                 toggleBtn.style.display = 'inline-block';
             } else {
+                // Завершили фазу «после» — предлагаем "Завершить" и подготовим новый цикл
                 measurementPhase = 'before';
-                // Второе завершение — скрываем кнопку "Заново" и оставляем только "Завершить"
                 toggleBtn.style.display = 'none';
                 resetBtn.textContent = 'Завершить';
+                // Установим флаг, чтобы следующий "Старт" всегда начинал с ДО
+                forcePhaseBeforeOnNextStart = true;
             }
         }
 
@@ -2139,6 +2160,7 @@
             startTimeMs = 0;
             endTimeMs = 0;
             measurementPhase = 'before';
+            forcePhaseBeforeOnNextStart = true;
             // Сброс UI
             avgBeforeEl.textContent = 'До: -- dB';
             avgAfterEl.textContent = 'После: -- dB';
