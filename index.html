@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Шумомер</title>
     <meta name="theme-color" content="#01644f">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
+    <meta name="theme-color" content="#01644f">
     <link rel="manifest" href="/multiframe-noisemeter/manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="/multiframe-noisemeter/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/multiframe-noisemeter/icon-512.png">
@@ -950,7 +954,7 @@
         (function registerSW(){
             if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function(){
-                    navigator.serviceWorker.register('/multiframe-noisemeter/service-worker.js', { scope: '/multiframe-noisemeter/' }).catch(function(e){
+                    navigator.serviceWorker.register('./service-worker.js', { scope: './' }).catch(function(e){
                         console.warn('SW register failed', e);
                     });
                 });
