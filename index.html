@@ -1054,12 +1054,10 @@
         let hoverX = null;
         let sampleRate = 48000;
         let currentFftSize = 2048;
-        // Два этапа измерения: до/после
-        let measurementPhase = 'before'; // 'before' | 'after'
-        // Флаг принудительного старта с фазы "до" для следующего запуска
-        let forcePhaseBeforeOnNextStart = false;
-        // Флаг явной готовности начать фазу ПОСЛЕ на следующем старте
-        let readyForAfterOnNextStart = false;
+        // Два этапа измерения: до/после, явная машина состояний
+        // Состояния: 'idle_before' | 'measuring_before' | 'idle_after' | 'measuring_after' | 'completed'
+        let measurementState = 'idle_before';
+        let measurementPhase = 'before'; // дублируем для совместимости с существующей логикой
         // Медианное сглаживание спектра по окну из 80 кадров
         const SMOOTH_WINDOW = 80;
         let spectrumBuffer = [];
@@ -1915,7 +1913,7 @@
             avgBeforeVal = null;
             avgAfterVal = null;
             measurementPhase = 'before';
-            forcePhaseBeforeOnNextStart = true;
+            measurementState = 'idle_before';
             avgBeforeEl.textContent = 'До: -- dB';
             avgAfterEl.textContent = 'После: -- dB';
             diffElement.textContent = 'Разница: -- dB';
@@ -1935,13 +1933,17 @@
             try {
                 // Убираем анимацию пульсации при нажатии Старт
                 toggleBtn.classList.remove('pulse-attention');
-                // Приоритетно: если только что завершили ДО — стартуем ПОСЛЕ
-                if (readyForAfterOnNextStart) {
-                    measurementPhase = 'after';
-                    readyForAfterOnNextStart = false;
-                } else if (forcePhaseBeforeOnNextStart) {
+                // Выбор фазы по состоянию
+                if (measurementState === 'idle_before') {
                     measurementPhase = 'before';
-                    forcePhaseBeforeOnNextStart = false;
+                    measurementState = 'measuring_before';
+                } else if (measurementState === 'idle_after') {
+                    measurementPhase = 'after';
+                    measurementState = 'measuring_after';
+                } else if (measurementState === 'completed') {
+                    // Начинаем новый цикл с ДО
+                    measurementPhase = 'before';
+                    measurementState = 'measuring_before';
                 }
                 
                 // Новый цикл начинается, когда фаза ДО и нажали старт заново — очищаем старые графики/значения
@@ -2229,23 +2231,16 @@
             isMeasuring = false;
             // Переключаем фазу и управляем подписями кнопок
             if (measurementPhase === 'before') {
-                measurementPhase = 'after';
+                // Завершили ДО → встаём в ожидание ПОСЛЕ
+                measurementState = 'idle_after';
                 toggleBtn.textContent = 'Старт';
-                resetBtn.textContent = 'Стоп';
                 toggleBtn.style.display = 'inline-block';
-                // Гарантируем, что следующий старт не будет принудительно в ДО
-                forcePhaseBeforeOnNextStart = false;
-                // Явно помечаем, что следующий "Старт" должен начать фазу ПОСЛЕ
-                readyForAfterOnNextStart = true;
+                resetBtn.textContent = 'Стоп';
             } else {
-                // Завершили фазу «после» — предлагаем "Завершить" и подготовим новый цикл
-                measurementPhase = 'before';
+                // Завершили ПОСЛЕ → цикл завершён
+                measurementState = 'completed';
                 toggleBtn.style.display = 'none';
                 resetBtn.textContent = 'Завершить';
-                // Установим флаг, чтобы следующий "Старт" всегда начинал с ДО
-                forcePhaseBeforeOnNextStart = true;
-                // Не очищаем графики здесь — они должны застыть до нажатия "Завершить"
-                readyForAfterOnNextStart = false;
             }
         }
 
