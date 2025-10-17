@@ -2080,15 +2080,25 @@
                 // FOREVER-спектры по фазам (накапливаем линейную мощность по бинам)
                 if (isMeasuring) {
                     const bufferLength = freqArray.length;
+                    const nyquistLocal = sampleRate / 2;
                     // подготовим сумматоры
                     if (measurementPhase === 'before') {
                         if (!foreverBeforeSpecSum || foreverBeforeSpecSum.length !== bufferLength) {
                             foreverBeforeSpecSum = new Float64Array(bufferLength);
                         }
                         for (let i = 0; i < bufferLength; i++) {
+                            // 0..1 амплитуда
                             const n = (freqArray[i] / 255);
-                            const p = n * n;
-                            foreverBeforeSpecSum[i] += p;
+                            if (n <= 0) continue;
+                            // dB мгновенные по амплитуде
+                            let dB = 20 * Math.log10(n);
+                            const freq = (i / bufferLength) * nyquistLocal;
+                            // A-взвешивание
+                            dB += getAWeighting(freq);
+                            // обратно в нормализованную амплитуду
+                            const nCorr = Math.pow(10, dB / 20);
+                            const pCorr = nCorr * nCorr; // линейная мощность
+                            foreverBeforeSpecSum[i] += pCorr;
                         }
                     } else {
                         if (!foreverAfterSpecSum || foreverAfterSpecSum.length !== bufferLength) {
@@ -2096,8 +2106,13 @@
                         }
                         for (let i = 0; i < bufferLength; i++) {
                             const n = (freqArray[i] / 255);
-                            const p = n * n;
-                            foreverAfterSpecSum[i] += p;
+                            if (n <= 0) continue;
+                            let dB = 20 * Math.log10(n);
+                            const freq = (i / bufferLength) * nyquistLocal;
+                            dB += getAWeighting(freq);
+                            const nCorr = Math.pow(10, dB / 20);
+                            const pCorr = nCorr * nCorr;
+                            foreverAfterSpecSum[i] += pCorr;
                         }
                     }
                 }
@@ -2196,6 +2211,7 @@
                 resetBtn.textContent = 'Завершить';
                 // Установим флаг, чтобы следующий "Старт" всегда начинал с ДО
                 forcePhaseBeforeOnNextStart = true;
+                // Не очищаем графики здесь — они должны застыть до нажатия "Завершить"
             }
         }
 
@@ -2405,6 +2421,18 @@
             return out2;
         }
 
+        // Вспомогательная: построить усреднённый по Forever спектр (0..255) из сумм мощностей
+        function buildAveragedSpec(sumArr, frames, bins) {
+            const out = new Uint8Array(bins || (sumArr ? sumArr.length : 0));
+            if (!sumArr || !sumArr.length || !frames) return out;
+            for (let i = 0; i < sumArr.length; i++) {
+                const p = sumArr[i] / frames; // средняя мощность
+                const n = Math.sqrt(Math.max(0, p)); // RMS
+                out[i] = Math.max(0, Math.min(255, Math.round(n * 255)));
+            }
+            return out;
+        }
+
         function drawFrequencyResponse(freqArray) {
             if (!freqCtx) return;
             const rect = freqCanvas.getBoundingClientRect();
@@ -2525,35 +2553,22 @@
             }
 
             // Построение усреднённого по режиму Forever спектра текущей фазы во время измерения
-            function buildAveragedSpec(sumArr, frames) {
-                const out = new Uint8Array(bins);
-                if (!sumArr || frames === 0) return out;
-                for (let i = 0; i < bins; i++) {
-                    const p = sumArr[i] / frames; // средняя мощность
-                    const n = Math.sqrt(Math.max(0, p)); // RMS амплитуда 0..1
-                    out[i] = Math.max(0, Math.min(255, Math.round(n * 255)));
-                }
-                return out;
-            }
-
             if (isMeasuring && analyser && freqArray && freqArray.length === bins) {
                 if (measurementPhase === 'before') {
-                    const liveAvg = buildAveragedSpec(foreverBeforeSpecSum, foreverBeforeCountFrames);
+                    const liveAvg = buildAveragedSpec(foreverBeforeSpecSum, foreverBeforeCountFrames, bins);
                     drawSmoothLine('rgba(229,57,53,0.95)', liveAvg);
                 } else {
-                    const liveAvg = buildAveragedSpec(foreverAfterSpecSum, foreverAfterCountFrames);
+                    const liveAvg = buildAveragedSpec(foreverAfterSpecSum, foreverAfterCountFrames, bins);
                     drawSmoothLine('rgba(1,100,79,0.95)', liveAvg);
                 }
             }
 
-            // Линия ДО (красная)
+            // В статике рисуем ДО под ПОСЛЕ, чтобы зелёная была сверху
             if (beforeSmoothed && beforeSmoothed.length === bins) {
                 drawSmoothLine('rgba(229,57,53,0.9)', beforeSmoothed);
             }
-            
-            // Линия ПОСЛЕ (зелёная)
             if (afterSmoothed && afterSmoothed.length === bins) {
-                drawSmoothLine('rgba(1,100,79,0.9)', afterSmoothed);
+                drawSmoothLine('rgba(1,100,79,0.95)', afterSmoothed);
             }
 
             // Теперь наносим риски и подписи поверх графиков
