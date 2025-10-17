@@ -1,4 +1,4 @@
-const CACHE_NAME = 'multiframe-noisemeter-v41-fixes-after-start-reset';
+const CACHE_NAME = 'multiframe-noisemeter-v42-after-phase-start';
 const urlsToCache = [
   './',
   './index.html',
