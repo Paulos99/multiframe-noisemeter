@@ -2242,13 +2242,27 @@
                     }
                 }
                 
-                // Финальная отрисовка
+                // Финальная отрисовка с правильным размером bins
                 try {
-                    drawFrequencyResponse(new Uint8Array(1024));
+                    const bins = analyser ? analyser.frequencyBinCount : 2048;
+                    drawFrequencyResponse(new Uint8Array(bins));
                 } catch(e) { console.warn('Не удалось отрисовать финальную АЧХ', e); }
             }
 
             isMeasuring = false;
+            
+            // Сразу после установки isMeasuring = false перерисовываем график, чтобы застыли линии
+            // Используем небольшую задержку, чтобы canvas успел получить размер после выхода из fullscreen
+            setTimeout(() => {
+                try {
+                    const bins = analyser ? analyser.frequencyBinCount : 2048;
+                    drawFrequencyResponse(new Uint8Array(bins));
+                    console.log('График перерисован после stopMeter, beforeSmoothed:', beforeSmoothed ? beforeSmoothed.length : 'null', 'afterSmoothed:', afterSmoothed ? afterSmoothed.length : 'null');
+                } catch(e) {
+                    console.error('Ошибка перерисовки графика:', e);
+                }
+            }, 150);
+            
             // Переключаем фазу и управляем подписями кнопок
             if (measurementPhase === 'before') {
                 measurementPhase = 'after';
@@ -2645,8 +2659,26 @@
 
         // Интерактивность: ховер/тач
         if (freqCanvas) {
-            window.addEventListener('resize', () => { initFreqCanvas(); });
-            window.addEventListener('orientationchange', () => { setTimeout(initFreqCanvas, 100); });
+            window.addEventListener('resize', () => { 
+                initFreqCanvas(); 
+                // После изменения размера canvas перерисовываем застывшие графики
+                if (!isMeasuring && (beforeSmoothed || afterSmoothed)) {
+                    setTimeout(() => {
+                        const bins = beforeSmoothed ? beforeSmoothed.length : (afterSmoothed ? afterSmoothed.length : 2048);
+                        drawFrequencyResponse(new Uint8Array(bins));
+                    }, 50);
+                }
+            });
+            window.addEventListener('orientationchange', () => { 
+                setTimeout(() => {
+                    initFreqCanvas();
+                    // После изменения ориентации перерисовываем застывшие графики
+                    if (!isMeasuring && (beforeSmoothed || afterSmoothed)) {
+                        const bins = beforeSmoothed ? beforeSmoothed.length : (afterSmoothed ? afterSmoothed.length : 2048);
+                        drawFrequencyResponse(new Uint8Array(bins));
+                    }
+                }, 100); 
+            });
             setTimeout(initFreqCanvas, 0);
         }
         
