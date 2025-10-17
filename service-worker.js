@@ -1,4 +1,4 @@
-const CACHE_NAME = 'multiframe-noisemeter-v45-forever-accumulators-fix';
+const CACHE_NAME = 'multiframe-noisemeter-v46-freeze-graphs-fix';
 const urlsToCache = [
   './',
   './index.html',

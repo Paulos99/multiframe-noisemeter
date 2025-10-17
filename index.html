@@ -2223,11 +2223,23 @@
                     }
                 }
                 
-                // Сохраняем Forever-спектр по фазам
-                if (measurementPhase === 'before' && foreverBeforeSpecSum && foreverBeforeSpecCount) {
-                    beforeSmoothed = buildAveragedSpec(foreverBeforeSpecSum, foreverBeforeSpecCount);
-                } else if (measurementPhase === 'after' && foreverAfterSpecSum && foreverAfterSpecCount) {
-                    afterSmoothed = buildAveragedSpec(foreverAfterSpecSum, foreverAfterSpecCount);
+                // Сохраняем Forever-спектр по фазам в Uint8Array для отрисовки
+                if (measurementPhase === 'before' && foreverBeforeSpecSum && foreverBeforeCountFrames > 0) {
+                    const bins = foreverBeforeSpecSum.length;
+                    beforeSmoothed = new Uint8Array(bins);
+                    for (let i = 0; i < bins; i++) {
+                        const avgPower = foreverBeforeSpecSum[i] / foreverBeforeCountFrames;
+                        const n = Math.sqrt(Math.max(0, avgPower));
+                        beforeSmoothed[i] = Math.max(0, Math.min(255, Math.round(n * 255)));
+                    }
+                } else if (measurementPhase === 'after' && foreverAfterSpecSum && foreverAfterCountFrames > 0) {
+                    const bins = foreverAfterSpecSum.length;
+                    afterSmoothed = new Uint8Array(bins);
+                    for (let i = 0; i < bins; i++) {
+                        const avgPower = foreverAfterSpecSum[i] / foreverAfterCountFrames;
+                        const n = Math.sqrt(Math.max(0, avgPower));
+                        afterSmoothed[i] = Math.max(0, Math.min(255, Math.round(n * 255)));
+                    }
                 }
                 
                 // Финальная отрисовка
