@@ -1901,7 +1901,31 @@
                 return;
             }
             // «Сброс»: полностью очищает измерения и графики, но ничего не запускает
-            hardReset();
+            // Полный сброс обоих измерений и графиков
+            foreverBeforeSumRms2 = 0;
+            foreverBeforeCountFrames = 0;
+            foreverAfterSumRms2 = 0;
+            foreverAfterCountFrames = 0;
+            foreverBeforeSpecSum = null;
+            foreverAfterSpecSum = null;
+            beforeSmoothed = null;
+            afterSmoothed = null;
+            avgBeforeVal = null;
+            avgAfterVal = null;
+            measurementPhase = 'before';
+            forcePhaseBeforeOnNextStart = true;
+            avgBeforeEl.textContent = 'До: -- dB';
+            avgAfterEl.textContent = 'После: -- dB';
+            diffElement.textContent = 'Разница: -- dB';
+            toggleBtn.textContent = 'Старт';
+            toggleBtn.style.display = 'inline-block';
+            resetBtn.textContent = 'Стоп';
+            // Очистка полотна
+            try {
+                const rect = freqCanvas.getBoundingClientRect();
+                freqCtx.fillStyle = '#ffffff';
+                freqCtx.fillRect(0, 0, rect.width, rect.height);
+            } catch(e) {}
         });
         // Кнопка сброса Forever удалена по требованию
         
@@ -2204,6 +2228,8 @@
                 toggleBtn.textContent = 'Старт';
                 resetBtn.textContent = 'Стоп';
                 toggleBtn.style.display = 'inline-block';
+                // Гарантируем, что следующий старт не будет принудительно в ДО
+                forcePhaseBeforeOnNextStart = false;
             } else {
                 // Завершили фазу «после» — предлагаем "Завершить" и подготовим новый цикл
                 measurementPhase = 'before';
