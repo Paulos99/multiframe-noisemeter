@@ -1,4 +1,4 @@
-const CACHE_NAME = 'multiframe-noisemeter-v37-phase-fix';
+const CACHE_NAME = 'multiframe-noisemeter-v39-forever-lines';
 const urlsToCache = [
   './',
   './index.html',
@@ -33,7 +33,16 @@ self.addEventListener('activate', event => {
       );
     })
   );
-  return self.clients.claim();
+  // Сразу начинаем контролировать клиентов
+  self.clients.claim();
+  // Форсируем перезагрузку всех открытых вкладок, чтобы подхватили новую версию
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+      clients.forEach(client => {
+        try { client.navigate(client.url); } catch(e) {}
+      });
+    })
+  );
 });
 
 // Обработка запросов - сначала кэш, потом сеть
