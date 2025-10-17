@@ -5,10 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Шумомер</title>
     <meta name="theme-color" content="#01644f">
-    <link rel="manifest" href="./manifest.json">
-    <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png">
-    <meta name="theme-color" content="#01644f">
     <link rel="manifest" href="/multiframe-noisemeter/manifest.json">
     <link rel="icon" type="image/png" sizes="192x192" href="/multiframe-noisemeter/icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="/multiframe-noisemeter/icon-512.png">
@@ -954,7 +950,7 @@
         (function registerSW(){
             if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function(){
-                    navigator.serviceWorker.register('./service-worker.js', { scope: './' }).catch(function(e){
+                    navigator.serviceWorker.register('/multiframe-noisemeter/service-worker.js', { scope: '/multiframe-noisemeter/' }).catch(function(e){
                         console.warn('SW register failed', e);
                     });
                 });
@@ -2426,115 +2422,84 @@
                 freqCtx.stroke();
             });
 
-            // Столбчатое представление АЧХ во время измерения
+            // Вспомогательная функция: перевод логарифмической частоты в X
+            function freqToX(f) {
+                const logF = Math.log10(Math.max(minF, Math.min(maxF, f)));
+                return ((logF - logMin) / (logMax - logMin)) * width;
+            }
+
+            // Вспомогательная функция: выборка и нормализация величины по частоте
+            function getNormAtFreq(data, f) {
+                const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
+                let v = data[bin] / 255;
+                v = Math.pow(v, 0.85);
+                const t = (Math.log10(f) - logMin) / (logMax - logMin);
+                const hfGain = 0.85 + 0.3 * t;
+                let vDraw = Math.min(1, v * hfGain);
+                return Math.min(0.9, vDraw);
+            }
+
+            // Рисование плавной линии по лог-шкале частоты
+            function drawSmoothLine(color, data) {
+                const numPts = 160; // больше точек для плавности
+                const topPad = 20;
+                const usableH = height - 30;
+                const tension = 0.3; // кривизна
+
+                // Сбор опорных точек
+                const pts = [];
+                for (let i = 0; i < numPts; i++) {
+                    const t = i / (numPts - 1);
+                    const f = Math.pow(10, logMin + t * (logMax - logMin));
+                    const x = freqToX(f);
+                    const n = getNormAtFreq(data, f);
+                    const y = height - (n * usableH) - topPad;
+                    pts.push({ x, y });
+                }
+
+                // Сглаживание: скользящее среднее
+                const win = 5;
+                const smooth = pts.map((p, i) => {
+                    let sx = 0, sy = 0, c = 0;
+                    for (let k = -win; k <= win; k++) {
+                        const j = Math.min(numPts - 1, Math.max(0, i + k));
+                        sx += pts[j].x; sy += pts[j].y; c++;
+                    }
+                    return { x: sx / c, y: sy / c };
+                });
+
+                // Рисуем сглаженную линию (кубические кривые через промежуточные контрольные точки)
+                freqCtx.strokeStyle = color;
+                freqCtx.lineWidth = 3;
+                freqCtx.lineJoin = 'round';
+                freqCtx.lineCap = 'round';
+                freqCtx.beginPath();
+                freqCtx.moveTo(smooth[0].x, smooth[0].y);
+                for (let i = 1; i < smooth.length; i++) {
+                    const p0 = smooth[i - 1];
+                    const p1 = smooth[i];
+                    const cx = p0.x + (p1.x - p0.x) * tension;
+                    const cy = p0.y + (p1.y - p0.y) * tension;
+                    freqCtx.quadraticCurveTo(cx, cy, p1.x, p1.y);
+                }
+                freqCtx.stroke();
+            }
+
+            // Лайв‑линия во время измерения
             if (isMeasuring && analyser && freqArray && freqArray.length === bins) {
                 const liveData = currentSmoothed || freqArray;
                 const isAfter = measurementPhase === 'after';
-                
-                // Параметры столбцов
-                const numBars = 80; // количество столбцов
-                const barWidth = width / numBars;
-                const barGap = 1; // зазор между столбцами
-                
-                // Цвет столбцов
-                const barColor = isAfter ? 'rgba(1,100,79,0.8)' : 'rgba(229,57,53,0.8)';
-                const barColorLight = isAfter ? 'rgba(1,100,79,0.4)' : 'rgba(229,57,53,0.4)';
-                
-                freqCtx.fillStyle = barColor;
-                
-                for (let i = 0; i < numBars; i++) {
-                    const t = i / (numBars - 1);
-                    const logF = logMin + t * (logMax - logMin);
-                    const f = Math.pow(10, logF);
-                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
-                    
-                    let v = liveData[bin] / 255;
-                    v = Math.pow(v, 0.85);
-                    const hfGain = 0.85 + 0.3 * t;
-                    let vDraw = Math.min(1, v * hfGain);
-                    vDraw = Math.min(0.9, vDraw);
-                    
-                    const barHeight = vDraw * (height - 30);
-                    const x = i * barWidth;
-                    const y = height - barHeight - 20;
-                    
-                    // Градиент для каждого столбца (светлее сверху)
-                    const gradient = freqCtx.createLinearGradient(0, y, 0, height - 20);
-                    gradient.addColorStop(0, barColor);
-                    gradient.addColorStop(1, barColorLight);
-                    freqCtx.fillStyle = gradient;
-                    
-                    // Рисуем столбец
-                    freqCtx.fillRect(x, y, barWidth - barGap, barHeight);
-                }
+                drawSmoothLine(isAfter ? 'rgba(1,100,79,0.95)' : 'rgba(229,57,53,0.95)', liveData);
             }
 
-            // Столбчатая АЧХ ДО (красные столбцы)
+            // Линия ДО (красная)
             if (beforeSmoothed && beforeSmoothed.length === bins) {
-                const numBars = 80;
-                const barWidth = width / numBars;
-                const barGap = 1;
-                
-                const barColor = 'rgba(229,57,53,0.7)';
-                const barColorLight = 'rgba(229,57,53,0.3)';
-                
-                for (let i = 0; i < numBars; i++) {
-                    const t = i / (numBars - 1);
-                    const logF = logMin + t * (logMax - logMin);
-                    const f = Math.pow(10, logF);
-                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
-                    
-                    let v = beforeSmoothed[bin] / 255;
-                    v = Math.pow(v, 0.85);
-                    const hfGain = 0.85 + 0.3 * t;
-                    let vDraw = Math.min(1, v * hfGain);
-                    vDraw = Math.min(0.9, vDraw);
-                    
-                    const barHeight = vDraw * (height - 30);
-                    const x = i * barWidth;
-                    const y = height - barHeight - 20;
-                    
-                    const gradient = freqCtx.createLinearGradient(0, y, 0, height - 20);
-                    gradient.addColorStop(0, barColor);
-                    gradient.addColorStop(1, barColorLight);
-                    freqCtx.fillStyle = gradient;
-                    
-                    freqCtx.fillRect(x, y, barWidth - barGap, barHeight);
-                }
+                drawSmoothLine('rgba(229,57,53,0.9)', beforeSmoothed);
             }
             
-            // Столбчатая АЧХ ПОСЛЕ (зеленые столбцы)
+            // Линия ПОСЛЕ (зелёная)
             if (afterSmoothed && afterSmoothed.length === bins) {
-                const numBars = 80;
-                const barWidth = width / numBars;
-                const barGap = 1;
-                
-                const barColor = 'rgba(1,100,79,0.7)';
-                const barColorLight = 'rgba(1,100,79,0.3)';
-                
-                for (let i = 0; i < numBars; i++) {
-                    const t = i / (numBars - 1);
-                    const logF = logMin + t * (logMax - logMin);
-                    const f = Math.pow(10, logF);
-                    const bin = Math.min(bins - 1, Math.max(0, Math.round((f / (sampleRate / 2)) * (bins - 1))));
-                    
-                    let v = afterSmoothed[bin] / 255;
-                    v = Math.pow(v, 0.85);
-                    const hfGain = 0.85 + 0.3 * t;
-                    let vDraw = Math.min(1, v * hfGain);
-                    vDraw = Math.min(0.9, vDraw);
-                    
-                    const barHeight = vDraw * (height - 30);
-                    const x = i * barWidth;
-                    const y = height - barHeight - 20;
-                    
-                    const gradient = freqCtx.createLinearGradient(0, y, 0, height - 20);
-                    gradient.addColorStop(0, barColor);
-                    gradient.addColorStop(1, barColorLight);
-                    freqCtx.fillStyle = gradient;
-                    
-                    freqCtx.fillRect(x, y, barWidth - barGap, barHeight);
-                }
+                drawSmoothLine('rgba(1,100,79,0.9)', afterSmoothed);
             }
 
             // Теперь наносим риски и подписи поверх графиков
