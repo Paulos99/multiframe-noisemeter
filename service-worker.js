@@ -1,4 +1,4 @@
-const CACHE_NAME = 'multiframe-noisemeter-v44-simple-logic-from-good';
+const CACHE_NAME = 'multiframe-noisemeter-v45-forever-accumulators-fix';
 const urlsToCache = [
   './',
   './index.html',

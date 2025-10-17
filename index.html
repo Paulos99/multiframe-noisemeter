@@ -1941,6 +1941,15 @@
                 
                 // Новый цикл начинается, когда фаза ДО и нажали старт заново — очищаем старые графики/значения
                 if (measurementPhase === 'before') {
+                    // Сбрасываем ВСЕ накопители для нового цикла
+                    foreverBeforeSumRms2 = 0;
+                    foreverBeforeCountFrames = 0;
+                    foreverAfterSumRms2 = 0;
+                    foreverAfterCountFrames = 0;
+                    foreverBeforeSpecSum = null;
+                    foreverBeforeSpecCount = null;
+                    foreverAfterSpecSum = null;
+                    foreverAfterSpecCount = null;
                     beforeSmoothed = null;
                     afterSmoothed = null;
                     avgBeforeVal = null;
@@ -1953,6 +1962,12 @@
                         freqCtx.fillStyle = '#ffffff';
                         freqCtx.fillRect(0, 0, rect.width, rect.height);
                     } catch(e) {}
+                } else {
+                    // Если начинаем фазу ПОСЛЕ, сбрасываем только накопители ПОСЛЕ
+                    foreverAfterSumRms2 = 0;
+                    foreverAfterCountFrames = 0;
+                    foreverAfterSpecSum = null;
+                    foreverAfterSpecCount = null;
                 }
 
                 // Используем микрофон по умолчанию — без выбора устройства
@@ -2186,38 +2201,38 @@
             const wasMeasuring = isMeasuring;
             isMeasuring = false;
 
-            // Итог среднего (LAeq по 1/3-октавам)
+            // Итог среднего (LAeq по 1/3-октавам) - берём Forever по текущей фазе
             if (wasMeasuring) {
-                const meanPower = foreverCountFrames > 0 ? (foreverSumRms2 / foreverCountFrames) : 0;
-                const avg = meanPower > 0 ? 10 * Math.log10(meanPower) + 100 : 0;
-                const durationSec = Math.floor((Date.now() - startTimeMs) / 1000);
-                if (avg !== null) {
-                    // Фиксируем по фазам и показываем крупно соответствующим цветом
-                    if (measurementPhase === 'before') {
-                        avgBeforeVal = Number(avg.toFixed(1));
-                        avgBeforeEl.textContent = `До: ${avgBeforeVal.toFixed(1)} dB`;
-                    } else {
-                        avgAfterVal = Number(avg.toFixed(1));
-                        avgAfterEl.textContent = `После: ${avgAfterVal.toFixed(1)} dB`;
-                        if (avgBeforeVal !== null) {
-                            const diffDb = avgAfterVal - avgBeforeVal;
-                            const powerRatio = Math.pow(10, diffDb / 10);
-                            const percent = (powerRatio - 1) * 100;
-                            const sign = percent >= 0 ? '+' : '';
-                            diffElement.textContent = `Разница: ${diffDb.toFixed(1)} dB (${sign}${percent.toFixed(0)}%)`;
-                        }
+                let meanPower, avg;
+                if (measurementPhase === 'before') {
+                    meanPower = foreverBeforeCountFrames > 0 ? (foreverBeforeSumRms2 / foreverBeforeCountFrames) : 0;
+                    avg = meanPower > 0 ? 10 * Math.log10(meanPower) + 100 : 0;
+                    avgBeforeVal = Number(avg.toFixed(1));
+                    avgBeforeEl.textContent = `До: ${avgBeforeVal.toFixed(1)} dB`;
+                } else {
+                    meanPower = foreverAfterCountFrames > 0 ? (foreverAfterSumRms2 / foreverAfterCountFrames) : 0;
+                    avg = meanPower > 0 ? 10 * Math.log10(meanPower) + 100 : 0;
+                    avgAfterVal = Number(avg.toFixed(1));
+                    avgAfterEl.textContent = `После: ${avgAfterVal.toFixed(1)} dB`;
+                    if (avgBeforeVal !== null) {
+                        const diffDb = avgAfterVal - avgBeforeVal;
+                        const powerRatio = Math.pow(10, diffDb / 10);
+                        const percent = (powerRatio - 1) * 100;
+                        const sign = percent >= 0 ? '+' : '';
+                        diffElement.textContent = `Разница: ${diffDb.toFixed(1)} dB (${sign}${percent.toFixed(0)}%)`;
                     }
                 }
-                // Сохраняем сглаженную АЧХ для визуализации по фазам (с доп. сглаживанием для плавности линии)
-                if (currentSmoothed) {
-                    const extraSmoothed = smoothSpectrum(currentSmoothed, 12);
-                    if (measurementPhase === 'before') beforeSmoothed = new Uint8Array(extraSmoothed);
-                    else afterSmoothed = new Uint8Array(extraSmoothed);
+                
+                // Сохраняем Forever-спектр по фазам
+                if (measurementPhase === 'before' && foreverBeforeSpecSum && foreverBeforeSpecCount) {
+                    beforeSmoothed = buildAveragedSpec(foreverBeforeSpecSum, foreverBeforeSpecCount);
+                } else if (measurementPhase === 'after' && foreverAfterSpecSum && foreverAfterSpecCount) {
+                    afterSmoothed = buildAveragedSpec(foreverAfterSpecSum, foreverAfterSpecCount);
                 }
-                // Финальная отрисовка сглаженной АЧХ
+                
+                // Финальная отрисовка
                 try {
-                    const arr = currentSmoothed || new Uint8Array(1024);
-                    drawFrequencyResponse(arr);
+                    drawFrequencyResponse(new Uint8Array(1024));
                 } catch(e) { console.warn('Не удалось отрисовать финальную АЧХ', e); }
             }
 
