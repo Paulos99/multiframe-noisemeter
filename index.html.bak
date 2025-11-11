@@ -232,7 +232,6 @@
             margin: 20px 0;
             font-size: 18px;
             color: #486267;
-            text-align: center;
         }
         #avg {
             font-size: clamp(28px, 6vw, 48px);
@@ -261,9 +260,6 @@
             font-size: 18px;
             color: #233538;
             margin: 6px 0;
-        }
-        #duration.hidden {
-            display: none;
         }
         /* АЧХ */
         #spectrumWrap {
@@ -936,7 +932,7 @@
                 <div id="avg" style="display:none">Среднее: -- dB</div>
             </div>
             <div class="controls-panel">
-                <div id="duration" class="hidden"></div>
+                <div id="duration">10 секунд</div>
                 <div class="row">
                     <button id="toggleBtn">Старт</button>
                     <button id="resetBtn">Стоп</button>
@@ -1035,21 +1031,6 @@
         const historyListEl = null;
         const clearHistoryBtn = null;
         const freqCanvas = document.getElementById('freqCanvas');
-
-        function showDuration(seconds) {
-            const value = String(seconds);
-            durationElement.textContent = value;
-            durationElement.setAttribute('data-prev', value);
-            durationElement.classList.remove('hidden');
-        }
-
-        function hideDuration() {
-            durationElement.textContent = '';
-            durationElement.removeAttribute('data-prev');
-            durationElement.classList.add('hidden');
-        }
-
-        hideDuration();
         
         // Элементы калибровки
         const calibrationBtn = document.getElementById('calibrationBtn');
@@ -1921,7 +1902,6 @@
             }
             // «Сброс»: полностью очищает измерения и графики, но ничего не запускает
             // Полный сброс обоих измерений и графиков
-            hideDuration();
             foreverBeforeSumRms2 = 0;
             foreverBeforeCountFrames = 0;
             foreverAfterSumRms2 = 0;
@@ -2032,7 +2012,8 @@
                 sumRms2 = 0;
                 countFrames = 0;
                 avgElement.textContent = 'Среднее: -- dB';
-                showDuration(measurementLimitSec);
+                durationElement.textContent = `${measurementLimitSec}`;
+                durationElement.setAttribute('data-prev', measurementLimitSec);
                 diffElement.textContent = 'Разница: -- dB';
                 startTimeMs = Date.now();
                 endTimeMs = startTimeMs + measurementLimitSec * 1000;
@@ -2102,10 +2083,10 @@
                     else avgAfterEl.textContent = `После: ${avgDisplayed.toFixed(1)} dB`;
                     const elapsed = Math.floor((Date.now() - startTimeMs) / 1000);
                     const remaining = Math.max(0, measurementLimitSec - elapsed);
-                    const remainingStr = String(remaining);
                     const prevRemaining = durationElement.getAttribute('data-prev');
-                    if (prevRemaining !== remainingStr) {
-                        showDuration(remainingStr);
+                    if (prevRemaining !== String(remaining)) {
+                        durationElement.textContent = `${remaining}`;
+                        durationElement.setAttribute('data-prev', remaining);
                         // Анимация пульсации
                         durationElement.classList.remove('pulse');
                         void durationElement.offsetWidth; // trigger reflow
@@ -2215,7 +2196,6 @@
             toggleBtn.disabled = false;
             toggleBtn.classList.remove('stop');
             deviceList.style.display = 'none';
-            hideDuration();
 
             // Сбрасываем флаг измерения ДО обработки итогов, чтобы живая линия не рисовалась
             const wasMeasuring = isMeasuring;
@@ -2329,7 +2309,7 @@
             avgBeforeEl.textContent = 'До: -- dB';
             avgAfterEl.textContent = 'После: -- dB';
             diffElement.textContent = 'Разница: -- dB';
-            hideDuration();
+            durationElement.textContent = `${measurementLimitSec} секунд`;
             toggleBtn.textContent = 'Старт';
             toggleBtn.classList.remove('stop');
             toggleBtn.disabled = false; // гарантируем, что старт снова активен
