@@ -1077,7 +1077,7 @@
         
         // Частотная калибровка
         const CALIBRATION_FREQUENCIES = [125, 250, 500, 1000, 2000, 4000, 8000]; // Гц
-        // Калибровка «из коробки» (получена без применения настройки StP)
+        // Базовая калибровка (по результатам эталонных измерений)
         const DEFAULT_FREQUENCY_CALIBRATION = {
             125:  { measured: 92.8, reference: 78.4, offset: -14.4 },
             250:  { measured: 89.1, reference: 77.1, offset: -12.0 },
@@ -1087,7 +1087,9 @@
             4000: { measured: 80.1, reference: 86.8, offset: 6.7 },
             8000: { measured: 73.8, reference: 80.6, offset: 6.8 }
         };
-        let frequencyCalibration = JSON.parse(JSON.stringify(DEFAULT_FREQUENCY_CALIBRATION));
+        const DEFAULT_GLOBAL_CALIBRATION_OFFSET = 48.8;
+        let GLOBAL_CALIBRATION_OFFSET = DEFAULT_GLOBAL_CALIBRATION_OFFSET;
+        let frequencyCalibration = cloneDefaultFrequencyCalibration();
         let isCalibrating = false;
         let calibrationAudioContext = null;
         let calibrationAnalyser = null;
@@ -1179,11 +1181,11 @@
         
         // ====== ЧАСТОТНАЯ КАЛИБРОВКА ======
         
-        // Загрузка калибровки из localStorage
         function cloneDefaultFrequencyCalibration() {
             return JSON.parse(JSON.stringify(DEFAULT_FREQUENCY_CALIBRATION));
         }
         
+        // Загрузка калибровки из localStorage
         function loadFrequencyCalibration() {
             frequencyCalibration = cloneDefaultFrequencyCalibration();
             
@@ -1201,7 +1203,6 @@
                 frequencyCalibration = cloneDefaultFrequencyCalibration();
             }
             
-            // Загрузка базовой калибровки
             GLOBAL_CALIBRATION_OFFSET = DEFAULT_GLOBAL_CALIBRATION_OFFSET;
             try {
                 const savedBase = localStorage.getItem('noiseMeterBaseCalibration');
@@ -1273,6 +1274,14 @@
                 `;
                 
                 calibrationFrequencyList.appendChild(item);
+                
+                if (calibData) {
+                    const applyBtn = item.querySelector(`#apply-btn-${freq}`);
+                    if (applyBtn) {
+                        applyBtn.textContent = '✓ Готово';
+                        applyBtn.disabled = true;
+                    }
+                }
             });
             
             // НЕ запускаем автоматически тон при открытии - пользователь сначала должен откалибровать белый шум
@@ -1664,14 +1673,14 @@
                 stopBaseNoise();
                 
                 // Полный сброс калибровочных данных
-                frequencyCalibration = {};
+                frequencyCalibration = cloneDefaultFrequencyCalibration();
                 saveFrequencyCalibration();
                 
-                // Сброс базовой калибровки к нулю
-                GLOBAL_CALIBRATION_OFFSET = 0.0;
+                // Сброс базовой калибровки к значению по умолчанию
+                GLOBAL_CALIBRATION_OFFSET = DEFAULT_GLOBAL_CALIBRATION_OFFSET;
                 saveBaseCalibration();
                 if (baseCalibrationOffset) {
-                    baseCalibrationOffset.innerHTML = `Текущее значение: <strong style="color: var(--accent);">+0.0 dB</strong>`;
+                    baseCalibrationOffset.innerHTML = `Текущее значение: <strong style="color: var(--accent);">${GLOBAL_CALIBRATION_OFFSET >= 0 ? '+' : ''}${GLOBAL_CALIBRATION_OFFSET.toFixed(1)} dB</strong>`;
                 }
                 if (baseOurInput) baseOurInput.value = '';
                 if (baseProfInput) baseProfInput.value = '';
@@ -1848,10 +1857,6 @@
 
         // ====== 1/3-октавные полосы и правильный расчет LAeq ======
         
-        // Глобальный калибровочный оффсет для приведения к SpectraPLUS (базовая калибровка)
-        const DEFAULT_GLOBAL_CALIBRATION_OFFSET = 48.8;
-        let GLOBAL_CALIBRATION_OFFSET = DEFAULT_GLOBAL_CALIBRATION_OFFSET;
-        
         function getThirdOctaveCenters() {
             // Стандартные центры 1/3 октавы в пределах 100-10000 Гц
             return [
@@ -2026,27 +2031,22 @@
         }
 
         // Экран запуска
-        async function ensureFullscreenOrLaunch() {
-            const root = document.documentElement;
-            if (root.classList.contains('fs')) return;
-            if (root.requestFullscreen) {
-                try {
-                    if (!document.fullscreenElement) {
-                        await root.requestFullscreen();
-                    }
-                } catch (e) {
-                    console.warn('Не удалось включить fullscreen:', e);
-                }
-            }
-            root.classList.add('fs');
-        }
-
         launchBtn.addEventListener('click', async () => {
-            await ensureFullscreenOrLaunch();
+            try {
+                if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                    document.documentElement.classList.add('fs');
+                }
+            } catch(e) {}
         });
 
         toggleBtn.addEventListener('click', async () => {
-            await ensureFullscreenOrLaunch();
+            try {
+                if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+                    await document.documentElement.requestFullscreen();
+                    document.documentElement.classList.add('fs');
+                }
+            } catch(e) {}
             if (!isMeasuring) {
                 startMeter();
                 toggleBtn.disabled = true; // сразу блокируем до окончания измерения
