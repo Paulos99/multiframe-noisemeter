@@ -958,7 +958,7 @@
                 </div>
                 
                 <div id="baseCalibrationOffset" style="margin-top: 10px; padding: 8px; background: #fff; border-radius: 6px; text-align: center; font-size: 13px; color: #667d81; border: 1px solid #ddd;">
-                    Текущее значение: <strong style="color: var(--accent);">+0.0 dB</strong>
+                    Текущее значение: <strong style="color: var(--accent);">+48.8 dB</strong>
                 </div>
             </div>
             
@@ -1077,8 +1077,17 @@
         
         // Частотная калибровка
         const CALIBRATION_FREQUENCIES = [125, 250, 500, 1000, 2000, 4000, 8000]; // Гц
-        // Финальные значения калибровки (утренние измерения, одна и та же петличка)
-        let frequencyCalibration = {};
+        // Калибровка «из коробки» (получена без применения настройки StP)
+        const DEFAULT_FREQUENCY_CALIBRATION = {
+            125:  { measured: 92.8, reference: 78.4, offset: -14.4 },
+            250:  { measured: 89.1, reference: 77.1, offset: -12.0 },
+            500:  { measured: 88.3, reference: 88.5, offset: 0.2 },
+            1000: { measured: 84.0, reference: 55.6, offset: -28.4 },
+            2000: { measured: 79.4, reference: 61.2, offset: -18.2 },
+            4000: { measured: 80.1, reference: 86.8, offset: 6.7 },
+            8000: { measured: 73.8, reference: 80.6, offset: 6.8 }
+        };
+        let frequencyCalibration = JSON.parse(JSON.stringify(DEFAULT_FREQUENCY_CALIBRATION));
         let isCalibrating = false;
         let calibrationAudioContext = null;
         let calibrationAnalyser = null;
@@ -1171,27 +1180,38 @@
         // ====== ЧАСТОТНАЯ КАЛИБРОВКА ======
         
         // Загрузка калибровки из localStorage
+        function cloneDefaultFrequencyCalibration() {
+            return JSON.parse(JSON.stringify(DEFAULT_FREQUENCY_CALIBRATION));
+        }
+        
         function loadFrequencyCalibration() {
+            frequencyCalibration = cloneDefaultFrequencyCalibration();
+            
             try {
                 const saved = localStorage.getItem('noiseMeterFreqCalibration');
                 if (saved !== null) {
-                    frequencyCalibration = JSON.parse(saved);
+                    const parsed = JSON.parse(saved);
+                    if (parsed && typeof parsed === 'object') {
+                        frequencyCalibration = parsed;
+                    }
                     console.log('Частотная калибровка загружена:', frequencyCalibration);
                 }
             } catch(e) {
                 console.error('Ошибка загрузки калибровки:', e);
-                frequencyCalibration = {};
+                frequencyCalibration = cloneDefaultFrequencyCalibration();
             }
             
             // Загрузка базовой калибровки
+            GLOBAL_CALIBRATION_OFFSET = DEFAULT_GLOBAL_CALIBRATION_OFFSET;
             try {
                 const savedBase = localStorage.getItem('noiseMeterBaseCalibration');
-                if (savedBase !== null) {
+                if (savedBase !== null && !isNaN(parseFloat(savedBase))) {
                     GLOBAL_CALIBRATION_OFFSET = parseFloat(savedBase);
                     console.log('Базовая калибровка загружена:', GLOBAL_CALIBRATION_OFFSET);
                 }
             } catch(e) {
                 console.error('Ошибка загрузки базовой калибровки:', e);
+                GLOBAL_CALIBRATION_OFFSET = DEFAULT_GLOBAL_CALIBRATION_OFFSET;
             }
         }
         
@@ -1829,7 +1849,8 @@
         // ====== 1/3-октавные полосы и правильный расчет LAeq ======
         
         // Глобальный калибровочный оффсет для приведения к SpectraPLUS (базовая калибровка)
-        let GLOBAL_CALIBRATION_OFFSET = 0.0;
+        const DEFAULT_GLOBAL_CALIBRATION_OFFSET = 48.8;
+        let GLOBAL_CALIBRATION_OFFSET = DEFAULT_GLOBAL_CALIBRATION_OFFSET;
         
         function getThirdOctaveCenters() {
             // Стандартные центры 1/3 октавы в пределах 100-10000 Гц
