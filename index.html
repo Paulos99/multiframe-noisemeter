@@ -2026,22 +2026,27 @@
         }
 
         // Экран запуска
-        launchBtn.addEventListener('click', async () => {
-            try {
-                if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
-                    await document.documentElement.requestFullscreen();
-                    document.documentElement.classList.add('fs');
+        async function ensureFullscreenOrLaunch() {
+            const root = document.documentElement;
+            if (root.classList.contains('fs')) return;
+            if (root.requestFullscreen) {
+                try {
+                    if (!document.fullscreenElement) {
+                        await root.requestFullscreen();
+                    }
+                } catch (e) {
+                    console.warn('Не удалось включить fullscreen:', e);
                 }
-            } catch(e) {}
+            }
+            root.classList.add('fs');
+        }
+
+        launchBtn.addEventListener('click', async () => {
+            await ensureFullscreenOrLaunch();
         });
 
         toggleBtn.addEventListener('click', async () => {
-            try {
-                if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
-                    await document.documentElement.requestFullscreen();
-                    document.documentElement.classList.add('fs');
-                }
-            } catch(e) {}
+            await ensureFullscreenOrLaunch();
             if (!isMeasuring) {
                 startMeter();
                 toggleBtn.disabled = true; // сразу блокируем до окончания измерения
